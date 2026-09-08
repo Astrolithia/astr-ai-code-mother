@@ -1,0 +1,76 @@
+{
+  "user": { "name": "Acw", "plan": "Pro" },
+  "apps": [
+    {
+      "id": "app_7fk2m9",
+      "name": "客户反馈收集表",
+      "description": "收集用户对新版本的意见，支持评分和文字反馈",
+      "status": "deployed",
+      "deployUrl": "https://feedback-7fk2m9.astr.app",
+      "visits": 1284,
+      "createdAt": "2026-06-14T09:12:00Z",
+      "updatedAt": "2026-09-05T16:40:00Z"
+    },
+    {
+      "id": "app_2xq8b1",
+      "name": "团队内部知识库检索与文档协作管理平台（试验版）",
+      "description": "",
+      "status": "deployed",
+      "deployUrl": "https://kb-2xq8b1.astr.app",
+      "visits": 37,
+      "createdAt": "2026-08-21T11:03:00Z",
+      "updatedAt": "2026-09-07T10:22:00Z"
+    },
+    {
+      "id": "app_9dz4p6",
+      "name": "报销单",
+      "description": "填写并提交报销申请",
+      "status": "generating",
+      "deployUrl": null,
+      "visits": 0,
+      "createdAt": "2026-09-08T14:31:00Z",
+      "updatedAt": "2026-09-08T14:31:00Z"
+    },
+    {
+      "id": "app_5tn3w0",
+      "name": "活动报名页",
+      "description": "线下沙龙报名，含名额上限和候补队列",
+      "status": "failed",
+      "deployUrl": null,
+      "visits": 0,
+      "error": "生成超时：第 3 步渲染组件树时超过 120s 限制",
+      "createdAt": "2026-09-08T13:55:00Z",
+      "updatedAt": "2026-09-08T13:57:00Z"
+    },
+    {
+      "id": "app_1bc6v8",
+      "name": "库存盘点助手",
+      "description": "扫码录入，自动比对系统数量与实盘数量",
+      "status": "draft",
+      "deployUrl": null,
+      "visits": 0,
+      "createdAt": "2026-09-02T08:47:00Z",
+      "updatedAt": "2026-09-02T08:47:00Z"
+    },
+    {
+      "id": "app_4hj0s2",
+      "name": "月度数据看板",
+      "description": "从飞书表格同步数据，展示核心指标趋势",
+      "status": "deployed",
+      "deployUrl": "https://dash-4hj0s2.astr.app",
+      "visits": 9436,
+      "createdAt": "2026-03-02T15:30:00Z",
+      "updatedAt": "2026-08-30T09:15:00Z"
+    },
+    {
+      "id": "app_8ry5k4",
+      "name": "问卷星导入工具",
+      "description": "把问卷星的导出文件转成结构化数据",
+      "status": "deployed",
+      "deployUrl": "https://import-8ry5k4.astr.app",
+      "visits": 512,
+      "createdAt": "2026-07-19T20:08:00Z",
+      "updatedAt": "2026-07-19T20:08:00Z"
+    }
+  ]
+}
