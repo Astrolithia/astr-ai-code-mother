@@ -1,6 +1,12 @@
 spring:
   application:
     name: astr-ai-code-mother-backend
+  # mysql
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/astr-ai-code
+    username: root
+    password: Paramecium88.
 server:
   port: 8123
   servlet:
@@ -10,8 +16,8 @@ springdoc:
   group-configs:
     - group: 'default'
       paths-to-match: '/**'
-      packages-to-scan: com.zwickyc.astraicodemother.controller
-# knife4j的增强配置，不需要增强可以不配
+      packages-to-scan: com.astr.astraicodemother.controller
+# knife4j
 knife4j:
   enable: true
   setting:
