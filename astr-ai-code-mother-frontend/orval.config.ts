@@ -18,6 +18,11 @@ export default defineConfig({
           path: "./lib/api/mutator/custom-fetch.ts",
           name: "customFetch",
         },
+        fetch: {
+          // customFetch resolves the parsed body directly (not a {data,status,headers}
+          // envelope), so generated types must match that shape.
+          includeHttpResponseReturnType: false,
+        },
       },
     },
   },
