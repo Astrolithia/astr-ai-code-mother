@@ -5,4 +5,22 @@
  * OpenAPI spec version: v0
  */
 
+export * from './baseResponseBoolean';
+export * from './baseResponseLoginUserVO';
+export * from './baseResponseLong';
+export * from './baseResponsePageUserVO';
 export * from './baseResponseString';
+export * from './baseResponseUser';
+export * from './baseResponseUserVO';
+export * from './deleteRequest';
+export * from './getUserByIdParams';
+export * from './getUserVOByIdParams';
+export * from './loginUserVO';
+export * from './pageUserVO';
+export * from './user';
+export * from './userAddRequest';
+export * from './userLoginRequest';
+export * from './userQueryRequest';
+export * from './userRegisterRequest';
+export * from './userUpdateRequest';
+export * from './userVO';

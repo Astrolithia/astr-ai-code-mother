@@ -46,18 +46,6 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   return result;
 };
 
-export type okResponse200 = {
-  data: BaseResponseString
-  status: 200
-}
-
-export type okResponseSuccess = (okResponse200) & {
-  headers: Headers;
-};
-;
-
-export type okResponse = (okResponseSuccess)
-
 export const getOkUrl = () => {
 
 
@@ -66,9 +54,9 @@ export const getOkUrl = () => {
   return `/health/ok`
 }
 
-export const ok = async ( options?: Parameters<typeof customFetch>[1]): Promise<okResponse> => {
+export const ok = async ( options?: Parameters<typeof customFetch>[1]): Promise<BaseResponseString> => {
 
-  return customFetch<okResponse>(getOkUrl(),
+  return customFetch<BaseResponseString>(getOkUrl(),
   {
     ...options,
     method: 'GET'
