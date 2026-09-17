@@ -7,6 +7,8 @@ spring:
     url: jdbc:mysql://localhost:3306/astr-ai-code
     username: root
     password: Paramecium88.
+  profiles:
+    active: local
 server:
   port: 8123
   servlet:
