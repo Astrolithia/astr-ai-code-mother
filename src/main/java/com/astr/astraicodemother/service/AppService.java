@@ -7,6 +7,7 @@ import com.astr.astraicodemother.model.entity.User;
 import com.astr.astraicodemother.model.vo.AppVO;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -49,4 +50,14 @@ public interface AppService extends IService<App> {
      * @return 应用封装类列表
      */
     List<AppVO> getAppVOList(List<App> appList);
+
+    /**
+     * 通过聊天生成应用代码
+     *
+     * @param appId     应用 ID
+     * @param message   提示词
+     * @param loginUser 登录用户
+     * @return
+     */
+    Flux<String> chatToGenCode(Long appId, String message, User loginUser);
 }
