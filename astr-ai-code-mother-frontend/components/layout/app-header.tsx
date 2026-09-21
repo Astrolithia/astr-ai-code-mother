@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { LogOut, Users } from "lucide-react";
+import { LayoutGrid, LogOut, Users } from "lucide-react";
 
 import { useUserLogout } from "@/lib/api/generated";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -27,13 +27,17 @@ const ROLE_LABEL: Record<string, string> = {
 
 function NavLink({
   href,
+  exact = false,
   children,
 }: {
   href: string;
+  exact?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const active = pathname === href || pathname.startsWith(`${href}/`);
+  const active = exact
+    ? pathname === href
+    : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <Link
@@ -78,7 +82,8 @@ export function AppHeader() {
         </Link>
 
         <nav className="flex flex-1 items-center gap-1">
-          <NavLink href="/apps">我的应用</NavLink>
+          <NavLink href="/apps" exact>我的应用</NavLink>
+          {isAdmin(user) && <NavLink href="/apps/manage">应用管理</NavLink>}
           {isAdmin(user) && <NavLink href="/users">用户管理</NavLink>}
         </nav>
 
@@ -119,6 +124,12 @@ export function AppHeader() {
                 <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground">
                   {user.userAccount}
                 </div>
+                {isAdmin(user) && (
+                  <DropdownMenuItem render={<Link href="/apps/manage" />}>
+                    <LayoutGrid />
+                    应用管理
+                  </DropdownMenuItem>
+                )}
                 {isAdmin(user) && (
                   <DropdownMenuItem render={<Link href="/users" />}>
                     <Users />

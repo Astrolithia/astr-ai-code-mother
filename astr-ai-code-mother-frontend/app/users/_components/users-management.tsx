@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Pencil,
+  Plus,
   RotateCcw,
   Search,
   Trash2,
@@ -49,6 +50,7 @@ import { getErrorMessage } from "@/lib/api/mutator/custom-fetch"
 import { CURRENT_USER_QUERY_KEY, useCurrentUser } from "@/lib/auth"
 import { formatDateTime } from "@/lib/format"
 
+import { AddUserDialog } from "@/app/users/_components/add-user-dialog"
 import { EditUserDialog } from "@/app/users/_components/edit-user-dialog"
 
 const PAGE_SIZE = 10
@@ -153,6 +155,7 @@ export function UsersManagement() {
 
   const [editTarget, setEditTarget] = React.useState<UserVO | null>(null)
   const [deleteTarget, setDeleteTarget] = React.useState<UserVO | null>(null)
+  const [isAddOpen, setIsAddOpen] = React.useState(false)
   const deleteMutation = useDeleteUser()
 
   const hasActiveFilters = !!(appliedAccount || appliedName || role !== "all")
@@ -232,11 +235,17 @@ export function UsersManagement() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold">用户管理</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          共 <span className="font-mono">{totalRow}</span> 个用户
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">用户管理</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            共 <span className="font-mono">{totalRow}</span> 个用户
+          </p>
+        </div>
+        <Button onClick={() => setIsAddOpen(true)}>
+          <Plus />
+          添加用户
+        </Button>
       </div>
 
       <form
@@ -436,6 +445,15 @@ export function UsersManagement() {
           </div>
         </div>
       )}
+
+      <AddUserDialog
+        open={isAddOpen}
+        onOpenChange={setIsAddOpen}
+        onSuccess={() => {
+          invalidateList()
+          setPageNum(1)
+        }}
+      />
 
       <EditUserDialog
         user={editTarget}

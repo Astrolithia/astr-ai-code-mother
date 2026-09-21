@@ -121,6 +121,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
                 .collect(Collectors.toMap(User::getId, userService::getUserVO));
         return appList.stream().map(app -> {
                     AppVO appVO = new AppVO();
+                    BeanUtil.copyProperties(app, appVO);
                     UserVO userVO = userVOMap.get(app.getUserId());
                     appVO.setUser(userVO);
                     return appVO;

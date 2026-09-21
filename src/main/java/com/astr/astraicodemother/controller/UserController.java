@@ -15,6 +15,8 @@ import com.astr.astraicodemother.model.vo.LoginUserVO;
 import com.astr.astraicodemother.model.vo.UserVO;
 import com.astr.astraicodemother.service.UserService;
 import com.mybatisflex.core.paginate.Page;
+import com.mybatisflex.core.query.QueryWrapper;
+import cn.hutool.core.util.StrUtil;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
@@ -110,6 +112,12 @@ public class UserController {
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
     public BaseResponse<Long> addUser(@RequestBody UserAddRequest userAddRequest) {
         ThrowUtils.throwIf(userAddRequest == null, ErrorCode.PARAMS_ERROR);
+        String userAccount = userAddRequest.getUserAccount();
+        ThrowUtils.throwIf(StrUtil.isBlank(userAccount), ErrorCode.PARAMS_ERROR, "账号不能为空");
+        QueryWrapper queryWrapper = new QueryWrapper();
+        queryWrapper.eq("userAccount", userAccount);
+        long count = userService.count(queryWrapper);
+        ThrowUtils.throwIf(count > 0, ErrorCode.PARAMS_ERROR, "账号已存在");
         User user = new User();
         BeanUtil.copyProperties(userAddRequest, user);
         // 默认密码 12345678
