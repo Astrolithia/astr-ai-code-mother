@@ -15,18 +15,22 @@ import com.astr.astraicodemother.model.dto.app.AppAddRequest;
 import com.astr.astraicodemother.model.dto.app.AppQueryRequest;
 import com.astr.astraicodemother.model.entity.App;
 import com.astr.astraicodemother.model.entity.User;
+import com.astr.astraicodemother.model.enums.ChatHistoryMessageTypeEnum;
 import com.astr.astraicodemother.model.enums.CodeGenTypeEnum;
 import com.astr.astraicodemother.model.vo.AppVO;
 import com.astr.astraicodemother.model.vo.UserVO;
 import com.astr.astraicodemother.service.AppService;
+import com.astr.astraicodemother.service.ChatHistoryService;
 import com.astr.astraicodemother.service.UserService;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.io.File;
+import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,6 +43,7 @@ import java.util.stream.Collectors;
  *
  * @author Astrolithia
  */
+@Slf4j
 @Service
 public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppService {
 
@@ -47,8 +52,20 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Resource
     private AiCodeGeneratorFacade aiCodeGeneratorFacade;
 
+    @Resource
+    private ChatHistoryService chatHistoryService;
+
     public AppServiceImpl(UserService userService) {
         this.userService = userService;
+    }
+
+    @Override
+    public boolean removeById(Serializable id) {
+        // 级联删除该应用的所有对话历史，避免数据冗余
+        if (id != null) {
+            chatHistoryService.deleteByAppId(Long.parseLong(id.toString()));
+        }
+        return super.removeById(id);
     }
 
     @Override
@@ -147,8 +164,23 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "应用代码生成类型错误");
         }
-        // 5. 调用 AI 生成代码
-        return aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
+        // 5. 在调用 AI 前，先保存用户消息，保证对话历史的完整性
+        chatHistoryService.addChatMessage(appId, message, ChatHistoryMessageTypeEnum.USER.getValue(), loginUser.getId());
+        // 6. 调用 AI 生成代码（流式）
+        Flux<String> contentFlux = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
+        // 7. 收集 AI 回复内容，流式结束后统一保存；即使 AI 回复失败，也记录错误信息
+        StringBuilder aiResponseBuilder = new StringBuilder();
+        return contentFlux
+                .doOnNext(aiResponseBuilder::append)
+                .doOnComplete(() -> {
+                    String aiResponse = aiResponseBuilder.toString();
+                    chatHistoryService.addChatMessage(appId, aiResponse, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                })
+                .doOnError(error -> {
+                    String errorMessage = "AI 回复失败：" + error.getMessage();
+                    chatHistoryService.addChatMessage(appId, errorMessage, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                    log.error("AI 生成代码失败，appId: {}", appId, error);
+                });
     }
 
     @Override
