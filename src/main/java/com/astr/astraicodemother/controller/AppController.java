@@ -12,10 +12,7 @@ import com.astr.astraicodemother.constant.UserConstant;
 import com.astr.astraicodemother.exception.BusinessException;
 import com.astr.astraicodemother.exception.ErrorCode;
 import com.astr.astraicodemother.exception.ThrowUtils;
-import com.astr.astraicodemother.model.dto.app.AppAddRequest;
-import com.astr.astraicodemother.model.dto.app.AppAdminUpdateRequest;
-import com.astr.astraicodemother.model.dto.app.AppQueryRequest;
-import com.astr.astraicodemother.model.dto.app.AppUpdateRequest;
+import com.astr.astraicodemother.model.dto.app.*;
 import com.astr.astraicodemother.model.entity.App;
 import com.astr.astraicodemother.model.entity.User;
 import com.astr.astraicodemother.model.enums.CodeGenTypeEnum;
@@ -26,11 +23,9 @@ import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.client.RestClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -78,6 +73,18 @@ public class AppController {
                                 .data("")
                                 .build()
                 ));
+    }
+
+    @PostMapping("/deploy")
+    public BaseResponse<String> deployApp(@RequestBody AppDeployRequest appDeployRequest, HttpServletRequest request) {
+        ThrowUtils.throwIf(appDeployRequest.getAppId() == null, ErrorCode.PARAMS_ERROR);
+        Long appId = appDeployRequest.getAppId();
+        ThrowUtils.throwIf(appId == null, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
+        // 获取当前登录用户
+        User loginUser = userService.getLoginUser(request);
+        // 调用服务部署应用
+        String deployUrl = appService.deployApp(appId, loginUser);
+        return ResultUtils.success(deployUrl);
     }
 
     /**
