@@ -2,6 +2,8 @@
 
 import * as React from "react"
 import { Loader2, SendHorizontal, TriangleAlert } from "lucide-react"
+import ReactMarkdown, { type Components } from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -15,18 +17,90 @@ export interface ChatMessage {
 
 const NEAR_BOTTOM_THRESHOLD_PX = 96
 
+// Hand-rolled Tailwind classes per element instead of @tailwindcss/typography's
+// `prose` — that plugin injects its own font-size scale, which conflicts with
+// design.md's "only text-xs/sm/base/lg/xl/2xl/3xl, no custom sizes" rule.
+const markdownComponents: Components = {
+  p: ({ children }) => <p className="my-2 text-sm first:mt-0 last:mb-0">{children}</p>,
+  strong: ({ children }) => <strong className="font-medium">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  a: ({ children, href }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="underline underline-offset-4 hover:text-foreground"
+    >
+      {children}
+    </a>
+  ),
+  ul: ({ children }) => (
+    <ul className="my-2 list-disc space-y-1 pl-5 text-sm first:mt-0 last:mb-0">{children}</ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="my-2 list-decimal space-y-1 pl-5 text-sm first:mt-0 last:mb-0">{children}</ol>
+  ),
+  li: ({ children }) => <li className="text-sm">{children}</li>,
+  h1: ({ children }) => <p className="mt-3 mb-2 text-sm font-medium first:mt-0">{children}</p>,
+  h2: ({ children }) => <p className="mt-3 mb-2 text-sm font-medium first:mt-0">{children}</p>,
+  h3: ({ children }) => <p className="mt-2 mb-1 text-sm font-medium first:mt-0">{children}</p>,
+  h4: ({ children }) => <p className="mt-2 mb-1 text-sm font-medium first:mt-0">{children}</p>,
+  h5: ({ children }) => <p className="mt-2 mb-1 text-sm font-medium first:mt-0">{children}</p>,
+  h6: ({ children }) => <p className="mt-2 mb-1 text-sm font-medium first:mt-0">{children}</p>,
+  blockquote: ({ children }) => (
+    <blockquote className="my-2 border-l-2 border-border pl-3 text-sm text-muted-foreground italic first:mt-0 last:mb-0">
+      {children}
+    </blockquote>
+  ),
+  hr: () => <hr className="my-3 border-border" />,
+  pre: ({ children }) => (
+    <pre className="my-2 overflow-x-auto rounded-md bg-muted p-3 first:mt-0 last:mb-0">
+      {children}
+    </pre>
+  ),
+  code: ({ className, children, ...props }) => {
+    const text = String(children).replace(/\n$/, "")
+    const isInline = !className && !text.includes("\n")
+    return isInline ? (
+      <code className="rounded bg-muted px-1 py-0.5 font-mono text-sm" {...props}>
+        {text}
+      </code>
+    ) : (
+      <code className="font-mono text-sm" {...props}>
+        {text}
+      </code>
+    )
+  },
+  table: ({ children }) => (
+    <div className="my-2 overflow-x-auto first:mt-0 last:mb-0">
+      <table className="w-full text-sm">{children}</table>
+    </div>
+  ),
+  tr: ({ children }) => <tr className="border-b border-border">{children}</tr>,
+  th: ({ children }) => <th className="px-2 py-1 text-left font-medium">{children}</th>,
+  td: ({ children }) => <td className="px-2 py-1 align-top">{children}</td>,
+}
+
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user"
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+        className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
           isUser
             ? "bg-foreground text-background"
             : "border border-border bg-background text-foreground"
         }`}
       >
-        {message.content}
+        {isUser ? (
+          <span className="whitespace-pre-wrap">{message.content}</span>
+        ) : (
+          <div className="break-words">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        )}
         {message.pending && (
           <span className="ml-0.5 inline-flex items-center gap-1 align-middle text-muted-foreground">
             <Loader2 className="animate-spin" size={14} />
