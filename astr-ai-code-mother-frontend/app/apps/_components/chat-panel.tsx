@@ -44,16 +44,30 @@ export function ChatPanel({
   streamError,
   disabled,
   onSend,
+  hasMoreHistory,
+  loadingMoreHistory,
+  onLoadMoreHistory,
+  historyPrependVersion,
 }: {
   messages: ChatMessage[]
   streaming: boolean
   streamError: string | null
   disabled?: boolean
   onSend: (text: string) => void
+  hasMoreHistory?: boolean
+  loadingMoreHistory?: boolean
+  onLoadMoreHistory?: () => void
+  /** Bumped by the parent each time older messages were prepended, so the
+   *  scroll-position effect below can tell "older history just loaded"
+   *  apart from "a new message arrived", which need opposite scroll
+   *  handling (keep position vs. jump to bottom). */
+  historyPrependVersion?: number
 }) {
   const [draft, setDraft] = React.useState("")
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const wasNearBottomRef = React.useRef(true)
+  const prevScrollHeightRef = React.useRef(0)
+  const prevPrependVersionRef = React.useRef(historyPrependVersion)
 
   function handleScroll() {
     const el = scrollRef.current
@@ -62,11 +76,21 @@ export function ChatPanel({
       el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_THRESHOLD_PX
   }
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     const el = scrollRef.current
-    if (!el || !wasNearBottomRef.current) return
-    el.scrollTop = el.scrollHeight
-  }, [messages])
+    if (!el) return
+    if (historyPrependVersion !== prevPrependVersionRef.current) {
+      // Older messages were just prepended above the current viewport —
+      // keep the same content pinned in place instead of letting the
+      // browser leave scrollTop unchanged (which would visually jump the
+      // conversation down by the height of what was just inserted).
+      el.scrollTop += el.scrollHeight - prevScrollHeightRef.current
+      prevPrependVersionRef.current = historyPrependVersion
+    } else if (wasNearBottomRef.current) {
+      el.scrollTop = el.scrollHeight
+    }
+    prevScrollHeightRef.current = el.scrollHeight
+  }, [messages, historyPrependVersion])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -91,6 +115,19 @@ export function ChatPanel({
         onScroll={handleScroll}
         className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4"
       >
+        {hasMoreHistory && (
+          <div className="flex justify-center pb-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={loadingMoreHistory}
+              onClick={onLoadMoreHistory}
+            >
+              {loadingMoreHistory && <Loader2 className="animate-spin" />}
+              {loadingMoreHistory ? "加载中…" : "加载更多历史消息"}
+            </Button>
+          </div>
+        )}
         {messages.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             描述你想要的功能或改动，AI 会开始生成
