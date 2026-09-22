@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { LayoutGrid, LogOut, Users } from "lucide-react";
+import { LayoutGrid, LogOut, MessagesSquare, Users } from "lucide-react";
 
 import { useUserLogout } from "@/lib/api/generated";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -84,6 +84,7 @@ export function AppHeader() {
         <nav className="flex flex-1 items-center gap-1">
           <NavLink href="/apps" exact>我的应用</NavLink>
           {isAdmin(user) && <NavLink href="/apps/manage">应用管理</NavLink>}
+          {isAdmin(user) && <NavLink href="/chat-history/manage">对话管理</NavLink>}
           {isAdmin(user) && <NavLink href="/users">用户管理</NavLink>}
         </nav>
 
@@ -128,6 +129,12 @@ export function AppHeader() {
                   <DropdownMenuItem render={<Link href="/apps/manage" />}>
                     <LayoutGrid />
                     应用管理
+                  </DropdownMenuItem>
+                )}
+                {isAdmin(user) && (
+                  <DropdownMenuItem render={<Link href="/chat-history/manage" />}>
+                    <MessagesSquare />
+                    对话管理
                   </DropdownMenuItem>
                 )}
                 {isAdmin(user) && (

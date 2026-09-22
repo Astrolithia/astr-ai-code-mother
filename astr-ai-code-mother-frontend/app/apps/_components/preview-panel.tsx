@@ -33,12 +33,18 @@ export function PreviewPanel({
   codeGenType,
   streaming,
   generationVersion,
+  hasPriorGeneration,
   onAvailabilityChange,
 }: {
   appId: string
   codeGenType?: string
   streaming: boolean
   generationVersion: number
+  /** True once the app's chat history shows a completed generation round
+   *  from a previous visit (>= 2 messages), so the very first availability
+   *  check on page load is worth making even before this session streams
+   *  anything. Ignored after generationVersion advances past 0. */
+  hasPriorGeneration: boolean
   onAvailabilityChange: (available: boolean) => void
 }) {
   const [state, setState] = React.useState<PreviewState>("checking")
@@ -57,12 +63,21 @@ export function PreviewPanel({
 
   React.useEffect(() => {
     if (streaming || !previewUrl) return
+    // On the very first check (generationVersion still 0, nothing streamed
+    // yet this session), only bother pinging the preview URL when history
+    // says a previous visit already produced a site — otherwise a brand-new
+    // app would show a pointless "checking…" flash before settling on
+    // "nothing generated yet", which we already know without asking.
+    // Deferred a tick so these setState calls don't happen synchronously
+    // inside the effect body itself (react-hooks/set-state-in-effect).
+    if (generationVersion === 0 && !hasPriorGeneration) {
+      queueMicrotask(() => setState("unavailable"))
+      return
+    }
     // generationVersion bump ⇒ a generation just finished ⇒ re-check + re-fetch,
     // which also busts any cached copy of the previous iframe contents.
-    // Deferred a tick so checkAvailability's setState calls don't happen
-    // synchronously inside the effect body itself (react-hooks/set-state-in-effect).
     queueMicrotask(() => void checkAvailability())
-  }, [previewUrl, streaming, generationVersion, checkAvailability])
+  }, [previewUrl, streaming, generationVersion, hasPriorGeneration, checkAvailability])
 
   React.useEffect(() => {
     onAvailabilityChange(!streaming && state === "available")

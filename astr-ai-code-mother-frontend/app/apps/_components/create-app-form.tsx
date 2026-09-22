@@ -8,7 +8,6 @@ import { useAddApp } from "@/lib/api/generated"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { getErrorMessage } from "@/lib/api/mutator/custom-fetch"
-import { appInitPromptStorageKey } from "@/lib/app-init-prompt"
 
 export function CreateAppForm() {
   const router = useRouter()
@@ -35,12 +34,9 @@ export function CreateAppForm() {
         setFormError("创建成功但未返回应用 ID，请刷新后重试")
         return
       }
-      try {
-        sessionStorage.setItem(appInitPromptStorageKey(appId), trimmed)
-      } catch {
-        // sessionStorage unavailable (private mode etc.) — the chat page will
-        // just skip the auto-send instead of erroring.
-      }
+      // No handoff needed: the chat page decides whether to auto-send by
+      // checking the app's own initPrompt against its (empty, for a brand
+      // new app) persisted chat history.
       router.push(`/apps/${appId}`)
     } catch (error) {
       setFormError(getErrorMessage(error, "创建应用失败，请稍后重试"))
