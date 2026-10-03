@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import reactor.core.publisher.Flux;
 
 @SpringBootTest
 @ActiveProfiles("local")
@@ -29,13 +30,14 @@ class AiCodeGeneratorServiceTest {
 
     @Test
     void testChatMemory() {
-        HtmlCodeResult result = aiCodeGeneratorService.generateCode(1, "做个程序员Astr的工具网站，总代码量不超过20行");
+        HtmlCodeResult result = aiCodeGeneratorService.generateCode("做个程序员Astr的工具网站，总代码量不超过20行");
         Assertions.assertNotNull(result);
-        result = aiCodeGeneratorService.generateCode(1, "不要生成网站，告诉我你刚刚做了什么");
+        result = aiCodeGeneratorService.generateCode("不要生成网站，告诉我你刚刚做了什么");
         Assertions.assertNotNull(result);
-        result = aiCodeGeneratorService.generateCode(2, "做个程序员Astr的工具网站，总代码量不超过 20 行");
+        result = aiCodeGeneratorService.generateCode("做个程序员Astr的工具网站，总代码量不超过 20 行");
         Assertions.assertNotNull(result);
-        result = aiCodeGeneratorService.generateCode(2, "不要生成网站，告诉我你刚刚做了什么");
+        result = aiCodeGeneratorService.generateCode("不要生成网站，告诉我你刚刚做了什么");
         Assertions.assertNotNull(result);
     }
+
 }
