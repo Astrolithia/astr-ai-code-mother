@@ -7,6 +7,8 @@ import { Loader2, Sparkles } from "lucide-react"
 import { useAddApp } from "@/lib/api/generated"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { CODE_GEN_TYPE, CODE_GEN_TYPE_OPTIONS } from "@/lib/app-code-gen"
 import { getErrorMessage } from "@/lib/api/mutator/custom-fetch"
 
 export function CreateAppForm() {
@@ -14,6 +16,7 @@ export function CreateAppForm() {
   const addAppMutation = useAddApp()
 
   const [prompt, setPrompt] = React.useState("")
+  const [codeGenType, setCodeGenType] = React.useState<string>(CODE_GEN_TYPE.MULTI_FILE)
   const [formError, setFormError] = React.useState<string | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -28,7 +31,7 @@ export function CreateAppForm() {
     if (addAppMutation.isPending) return
 
     try {
-      const response = await addAppMutation.mutateAsync({ data: { initPrompt: trimmed } })
+      const response = await addAppMutation.mutateAsync({ data: { initPrompt: trimmed, codeGenType } })
       const appId = response.data
       if (appId == null) {
         setFormError("创建成功但未返回应用 ID，请刷新后重试")
@@ -63,10 +66,27 @@ export function CreateAppForm() {
         ) : (
           <span />
         )}
-        <Button type="submit" disabled={addAppMutation.isPending}>
-          {addAppMutation.isPending ? <Loader2 className="animate-spin" /> : <Sparkles />}
-          生成应用
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select
+            items={CODE_GEN_TYPE_OPTIONS}
+            value={codeGenType}
+            onValueChange={(v) => v && setCodeGenType(v)}
+            disabled={addAppMutation.isPending}
+          >
+            <SelectTrigger aria-label="生成类型" className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CODE_GEN_TYPE_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button type="submit" disabled={addAppMutation.isPending}>
+            {addAppMutation.isPending ? <Loader2 className="animate-spin" /> : <Sparkles />}
+            生成应用
+          </Button>
+        </div>
       </div>
     </form>
   )

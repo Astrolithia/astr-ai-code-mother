@@ -53,17 +53,12 @@ import {
 } from "@/components/ui/table"
 import { getErrorMessage } from "@/lib/api/mutator/custom-fetch"
 import { asApiId } from "@/lib/app-id"
-import { formatCodeGenType } from "@/lib/app-code-gen"
+import { CODE_GEN_TYPE_OPTIONS, formatCodeGenType } from "@/lib/app-code-gen"
 import { formatDateTime } from "@/lib/format"
 
 const PAGE_SIZE = 20
 const QUERY_KEY = "admin-apps-list"
 const FEATURED_PRIORITY = 99
-
-const CODE_GEN_TYPE_OPTIONS = [
-  { value: "html", label: "原生 HTML 模式" },
-  { value: "multi_file", label: "原生多文件模式" },
-]
 
 interface Filters {
   id: string
