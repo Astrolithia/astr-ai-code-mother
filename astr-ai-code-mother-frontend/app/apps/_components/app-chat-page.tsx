@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError, BUSINESS_ERROR_CODE, getErrorMessage } from "@/lib/api/mutator/custom-fetch"
 import { streamChatToGenCode } from "@/lib/api/chat-stream"
 import { asApiId } from "@/lib/app-id"
+import { needsBuild } from "@/lib/app-code-gen"
 import { useCurrentUser } from "@/lib/auth"
 import { ChatPanel, type ChatMessage } from "@/app/apps/_components/chat-panel"
 import { PreviewPanel } from "@/app/apps/_components/preview-panel"
@@ -271,7 +272,7 @@ export function AppChatPage({ appId }: { appId: string }) {
               title={!previewAvailable ? "请先完成一次生成再部署" : undefined}
             >
               {deployMutation.isPending ? <Loader2 className="animate-spin" /> : <Rocket />}
-              {deployMutation.isPending ? "部署中" : "部署"}
+              {deployMutation.isPending ? (needsBuild(app?.codeGenType) ? "构建部署中" : "部署中") : "部署"}
             </Button>
           </div>
         )}

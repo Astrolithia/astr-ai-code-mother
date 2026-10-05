@@ -7,4 +7,5 @@
 
 export interface AppAddRequest {
   initPrompt?: string;
+  codeGenType?: string;
 }

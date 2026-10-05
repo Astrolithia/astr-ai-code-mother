@@ -8,6 +8,8 @@ import cn.hutool.core.util.StrUtil;
 import com.astr.astraicodemother.constant.AppConstant;
 import com.astr.astraicodemother.core.AiCodeGeneratorFacade;
 import com.astr.astraicodemother.core.builder.VueProjectBuilder;
+import com.astr.astraicodemother.core.handler.JsonMessageStreamHandler;
+import com.astr.astraicodemother.core.handler.SimpleTextStreamHandler;
 import com.astr.astraicodemother.exception.BusinessException;
 import com.astr.astraicodemother.exception.ErrorCode;
 import com.astr.astraicodemother.exception.ThrowUtils;
@@ -58,6 +60,12 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private VueProjectBuilder vueProjectBuilder;
+
+    @Resource
+    private JsonMessageStreamHandler jsonMessageStreamHandler;
+
+    @Resource
+    private SimpleTextStreamHandler simpleTextStreamHandler;
 
     public AppServiceImpl(UserService userService) {
         this.userService = userService;
@@ -172,19 +180,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         chatHistoryService.addChatMessage(appId, message, ChatHistoryMessageTypeEnum.USER.getValue(), loginUser.getId());
         // 6. 调用 AI 生成代码（流式）
         Flux<String> contentFlux = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
-        // 7. 收集 AI 回复内容，流式结束后统一保存；即使 AI 回复失败，也记录错误信息
-        StringBuilder aiResponseBuilder = new StringBuilder();
-        return contentFlux
-                .doOnNext(aiResponseBuilder::append)
-                .doOnComplete(() -> {
-                    String aiResponse = aiResponseBuilder.toString();
-                    chatHistoryService.addChatMessage(appId, aiResponse, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
-                })
-                .doOnError(error -> {
-                    String errorMessage = "AI 回复失败：" + error.getMessage();
-                    chatHistoryService.addChatMessage(appId, errorMessage, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
-                    log.error("AI 生成代码失败，appId: {}", appId, error);
-                });
+        // 7. 按生成类型处理流：Vue 工程模式的流是 JSON 消息，需要解析成文本；处理器负责保存对话历史
+        Flux<String> handledFlux = codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT
+                ? jsonMessageStreamHandler.handle(contentFlux, chatHistoryService, appId, loginUser)
+                : simpleTextStreamHandler.handle(contentFlux, chatHistoryService, appId, loginUser);
+        return handledFlux.doOnError(error -> log.error("AI 生成代码失败，appId: {}", appId, error));
     }
 
     @Override
