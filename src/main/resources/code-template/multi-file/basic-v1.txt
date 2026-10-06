@@ -1,0 +1,189 @@
+模板名称：基础响应式网站
+模板版本：basic-v1
+适用类型：multi_file
+技术栈：HTML、原生 CSS、原生 JavaScript，无第三方依赖。
+
+用途：
+提供导航栏、内容卡片、页脚和基础交互的参考结构。
+页面标题、文案、配色和业务交互应根据用户需求调整。
+这是一份参考代码，不代表对应文件已经存在于当前应用目录。
+
+index.html
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我的网站</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="container navigation" aria-label="主导航">
+      <a class="brand" href="#home">我的网站</a>
+      <a href="#features">功能介绍</a>
+    </nav>
+  </header>
+
+  <main class="container" id="home">
+    <section class="hero">
+      <h1>让想法成为现实</h1>
+      <p>根据实际需求，在这里展示网站的核心内容。</p>
+      <button type="button" id="action-button">了解更多</button>
+      <p id="action-message" role="status"></p>
+    </section>
+
+    <section id="features" aria-labelledby="features-title">
+      <h2 id="features-title">功能介绍</h2>
+      <div class="card-grid">
+        <article class="card">
+          <h3>清晰的内容</h3>
+          <p>用简洁的结构介绍主要功能和使用场景。</p>
+        </article>
+        <article class="card">
+          <h3>便捷的操作</h3>
+          <p>让用户轻松找到需要的信息并完成操作。</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>我的网站 · 用心创造价值</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
+```
+
+style.css
+```css
+:root {
+  --primary: #2563eb;
+  --background: #f8fafc;
+  --text: #1e293b;
+  --border: #e2e8f0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  background: var(--background);
+  font-family: system-ui, sans-serif;
+  line-height: 1.6;
+}
+
+.container {
+  width: min(100% - 32px, 1080px);
+  margin-inline: auto;
+}
+
+.site-header {
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+}
+
+.navigation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 18px;
+}
+
+.navigation a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.brand {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.hero {
+  padding-block: 64px;
+}
+
+.hero h1 {
+  margin: 0 0 16px;
+  font-size: clamp(28px, 5vw, 44px);
+}
+
+button {
+  padding: 10px 20px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  filter: brightness(0.9);
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 4px;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.card {
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+
+.site-footer {
+  margin-top: 48px;
+  padding: 24px 16px;
+  text-align: center;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    padding-block: 40px;
+  }
+}
+```
+
+script.js
+```javascript
+const actionButton = document.getElementById('action-button');
+const actionMessage = document.getElementById('action-message');
+
+if (actionButton && actionMessage) {
+  actionButton.addEventListener('click', () => {
+    actionMessage.textContent = '欢迎探索网站，下面是主要功能介绍。';
+    document.getElementById('features')?.scrollIntoView({
+      behavior: 'smooth'
+    });
+  });
+}
+```

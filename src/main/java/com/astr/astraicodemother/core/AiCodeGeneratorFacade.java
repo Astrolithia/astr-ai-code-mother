@@ -10,6 +10,7 @@ import com.astr.astraicodemother.ai.model.message.ToolExecutedMessage;
 import com.astr.astraicodemother.ai.model.message.ToolRequestMessage;
 import com.astr.astraicodemother.core.parser.CodeFileSaverExecutor;
 import com.astr.astraicodemother.core.parser.CodeParserExecutor;
+import com.astr.astraicodemother.core.template.CodeTemplatePromptEnhancer;
 import com.astr.astraicodemother.exception.BusinessException;
 import com.astr.astraicodemother.exception.ErrorCode;
 import com.astr.astraicodemother.model.enums.CodeGenTypeEnum;
@@ -30,19 +31,24 @@ public class AiCodeGeneratorFacade {
     @Resource
     private AiCodeGeneratorServiceFactory aiCodeGeneratorServiceFactory;
 
+    @Resource
+    private CodeTemplatePromptEnhancer codeTemplatePromptEnhancer;
+
     public File generateAndSaveCode(String userMessage, CodeGenTypeEnum codeGenTypeEnum, Long appId) {
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "生成类型不能为空");
         }
+        // 仅增强模型输入，不修改原始用户消息或后续保存逻辑。
+        String enhancedMessage = codeTemplatePromptEnhancer.enhance(userMessage, codeGenTypeEnum);
         // 根据 appId 获取相应的 AI 服务实例
         AiCodeGeneratorService aiCodeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId, codeGenTypeEnum);
         return switch (codeGenTypeEnum) {
             case HTML -> {
-                HtmlCodeResult result = aiCodeGeneratorService.generateCode(userMessage);
+                HtmlCodeResult result = aiCodeGeneratorService.generateCode(enhancedMessage);
                 yield CodeFileSaverExecutor.executeSaver(result, CodeGenTypeEnum.HTML, appId);
             }
             case MULTI_FILE -> {
-                MultiFileCodeResult result = aiCodeGeneratorService.generateMultiCode(userMessage);
+                MultiFileCodeResult result = aiCodeGeneratorService.generateMultiCode(enhancedMessage);
                 yield CodeFileSaverExecutor.executeSaver(result, CodeGenTypeEnum.MULTI_FILE, appId);
             }
             default -> {
@@ -62,18 +68,19 @@ public class AiCodeGeneratorFacade {
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "生成类型不能为空");
         }
+        String enhancedMessage = codeTemplatePromptEnhancer.enhance(userMessage, codeGenTypeEnum);
         AiCodeGeneratorService aiCodeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId, codeGenTypeEnum);
         return switch (codeGenTypeEnum) {
             case HTML -> {
-                Flux<String> codeStream = aiCodeGeneratorService.generateHtmlCodeStream(userMessage);
+                Flux<String> codeStream = aiCodeGeneratorService.generateHtmlCodeStream(enhancedMessage);
                 yield processCodeStream(codeStream, CodeGenTypeEnum.HTML, appId);
             }
             case MULTI_FILE -> {
-                Flux<String> codeStream = aiCodeGeneratorService.generateMultiCodeStream(userMessage);
+                Flux<String> codeStream = aiCodeGeneratorService.generateMultiCodeStream(enhancedMessage);
                 yield processCodeStream(codeStream, CodeGenTypeEnum.MULTI_FILE, appId);
             }
             case VUE_PROJECT -> {
-                TokenStream tokenStream = aiCodeGeneratorService.generateVueProjectCodeStream(userMessage, appId);
+                TokenStream tokenStream = aiCodeGeneratorService.generateVueProjectCodeStream(enhancedMessage, appId);
                 yield processTokenStream(tokenStream);
             }
             default -> {
