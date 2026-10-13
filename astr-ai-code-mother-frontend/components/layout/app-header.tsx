@@ -3,11 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { LayoutGrid, LogOut, MessagesSquare, Users } from "lucide-react";
+import { ArrowRight, LayoutGrid, LogOut, Menu, MessagesSquare, Users } from "lucide-react";
 
 import { useUserLogout } from "@/lib/api/generated";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -19,6 +18,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { getErrorMessage } from "@/lib/api/mutator/custom-fetch";
 import { isAdmin, useClearCurrentUser, useCurrentUser } from "@/lib/auth";
+import styles from "./app-header.module.css";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "管理员",
@@ -43,11 +43,7 @@ function NavLink({
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={`rounded-md px-2 py-2 text-sm font-medium transition-colors sm:px-3 ${
-        active
-          ? "bg-muted text-foreground"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-      }`}
+      className={styles.menuLink}
     >
       {children}
     </Link>
@@ -56,6 +52,7 @@ function NavLink({
 
 export function AppHeader() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, isLoading } = useCurrentUser();
   const clearCurrentUser = useClearCurrentUser();
   const logoutMutation = useUserLogout();
@@ -74,105 +71,162 @@ export function AppHeader() {
     });
   }
 
+  const admin = isAdmin(user);
+  const navigationLinks = [
+    { href: "/apps", label: "我的应用", exact: true },
+    { href: "/apps/board", label: "应用画板", exact: false },
+    ...(admin
+      ? [
+          { href: "/apps/manage", label: "应用管理", exact: false },
+          { href: "/chat-history/manage", label: "对话管理", exact: false },
+          { href: "/users", label: "用户管理", exact: false },
+        ]
+      : []),
+  ];
+
   return (
-    <header className="border-b border-border">
-      <div className="mx-auto flex h-14 max-w-screen-2xl items-center gap-3 px-4 sm:gap-6 sm:px-6 lg:px-8">
-        <Link href="/apps" className="text-base font-medium tracking-tight">
-          Astr
+    <header
+      className={`${styles.shell} ${pathname === "/" ? "dark bg-background text-foreground" : ""}`}
+    >
+      <div className={styles.navigation} data-admin={admin}>
+        <Link href="/" className={styles.brand} aria-label="Astr 首页">
+          <svg
+            className={styles.brandMark}
+            viewBox="0 0 46 46"
+            fill="none"
+            aria-hidden="true"
+          >
+            {Array.from({ length: 7 }, (_, i) => (
+              <path
+                key={i}
+                d="M22.5499 1.63159V22.5"
+                stroke="currentColor"
+                strokeWidth="5"
+                transform={`rotate(${(i * 360) / 7} 22.5499 22.5)`}
+              />
+            ))}
+          </svg>
+          <span className={styles.brandLabel}>Astr</span>
         </Link>
 
-        <nav className="flex flex-1 items-center gap-1">
-          <NavLink href="/apps" exact>我的应用</NavLink>
-          {isAdmin(user) && <NavLink href="/apps/manage">应用管理</NavLink>}
-          {isAdmin(user) && <NavLink href="/chat-history/manage">对话管理</NavLink>}
-          {isAdmin(user) && <NavLink href="/users">用户管理</NavLink>}
-        </nav>
+        <div className={styles.actions}>
+          <nav className={styles.desktopNavigation} aria-label="主导航">
+            {navigationLinks.map((item) => (
+              <NavLink key={item.href} href={item.href} exact={item.exact}>
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
 
-        <div className="flex items-center gap-2">
-          {isLoading ? (
-            <Skeleton className="size-8 rounded-lg" />
-          ) : user ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    className="gap-2 px-1.5"
-                    aria-label={`${user.userName ?? user.userAccount} 账号菜单`}
-                  />
-                }
-              >
-                <Avatar size="sm">
-                  <AvatarFallback>
-                    {(user.userName ?? user.userAccount ?? "?").slice(0, 1)}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="hidden text-sm font-medium sm:inline">
-                  {user.userName || user.userAccount}
-                </span>
-                <Badge variant="secondary" className="hidden sm:inline-flex">
-                  {ROLE_LABEL[user.userRole ?? ""] ?? user.userRole}
-                </Badge>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {/*
-                  Plain caption, not Base UI's DropdownMenuLabel/Group: this
-                  account name isn't an accessible label for the items below
-                  it (they're unrelated actions, not "this account's items"),
-                  it's just an informational heading. Styled to match
-                  DropdownMenuLabel exactly.
-                */}
-                <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground">
-                  {user.userAccount}
-                </div>
-                {isAdmin(user) && (
-                  <DropdownMenuItem render={<Link href="/apps/manage" />}>
-                    <LayoutGrid />
-                    应用管理
-                  </DropdownMenuItem>
-                )}
-                {isAdmin(user) && (
-                  <DropdownMenuItem render={<Link href="/chat-history/manage" />}>
-                    <MessagesSquare />
-                    对话管理
-                  </DropdownMenuItem>
-                )}
-                {isAdmin(user) && (
-                  <DropdownMenuItem render={<Link href="/users" />}>
-                    <Users />
-                    用户管理
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  disabled={logoutMutation.isPending}
-                  onClick={handleLogout}
-                >
-                  <LogOut />
-                  退出登录
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              nativeButton={false}
-              render={<Link href="/login" />}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  className={styles.mobileTrigger}
+                  aria-label="打开导航菜单"
+                />
+              }
             >
-              登录
-            </Button>
-          )}
+              <Menu size={20} className="size-5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={12} className={styles.menuPanel}>
+              {navigationLinks.map((item) => {
+                const active = item.exact
+                  ? pathname === item.href
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
+                  <DropdownMenuItem
+                    key={item.href}
+                    render={
+                      <Link href={item.href} aria-current={active ? "page" : undefined} />
+                    }
+                  >
+                    {item.label}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <div className={styles.accountSlot} aria-busy={isLoading}>
+            {isLoading ? (
+              <Skeleton className={styles.accountSkeleton} aria-label="正在加载账号" />
+            ) : user ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      className={styles.accountButton}
+                      aria-label={`${user.userName || user.userAccount} 账号菜单`}
+                    />
+                  }
+                >
+                  <span className={styles.actionLabel}>
+                    {user.userName || user.userAccount}
+                  </span>
+                  <ArrowRight size={20} className={`${styles.actionArrow} size-5`} aria-hidden="true" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" sideOffset={12} className={styles.menuPanel}>
+                  {/* Informational account caption, not a label for menu actions. */}
+                  <div className={styles.accountCaption}>
+                    <Avatar size="sm">
+                      <AvatarFallback>
+                        {(user.userName || user.userAccount || "?").slice(0, 1)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className={styles.accountDetails}>
+                      <p className={styles.accountName}>{user.userName || user.userAccount}</p>
+                      <p className={styles.accountMeta}>
+                        {user.userAccount} · {ROLE_LABEL[user.userRole ?? ""] ?? user.userRole}
+                      </p>
+                    </div>
+                  </div>
+                  {admin && (
+                    <>
+                      <DropdownMenuItem render={<Link href="/apps/manage" />}>
+                        <LayoutGrid size={16} />
+                        应用管理
+                      </DropdownMenuItem>
+                      <DropdownMenuItem render={<Link href="/chat-history/manage" />}>
+                        <MessagesSquare size={16} />
+                        对话管理
+                      </DropdownMenuItem>
+                      <DropdownMenuItem render={<Link href="/users" />}>
+                        <Users size={16} />
+                        用户管理
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={logoutMutation.isPending}
+                    onClick={handleLogout}
+                  >
+                    <LogOut size={16} />
+                    退出登录
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Button
+                className={styles.accountButton}
+                role="link"
+                nativeButton={false}
+                render={<Link href="/login" />}
+              >
+                <span className={styles.actionLabel}>登录</span>
+                <ArrowRight size={20} className={`${styles.actionArrow} size-5`} aria-hidden="true" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
       {logoutError && (
-        <div className="border-t border-border bg-destructive/10 px-4 py-2 sm:px-6 lg:px-8">
-          <p
-            role="alert"
-            className="mx-auto max-w-screen-2xl text-xs text-destructive"
-          >
+        <div className={`${styles.logoutError} rounded-lg border border-border bg-background px-4 py-2`}>
+          <p role="alert" className="text-xs text-destructive">
             {logoutError}
           </p>
         </div>
