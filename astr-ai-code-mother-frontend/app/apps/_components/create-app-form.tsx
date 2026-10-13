@@ -2,33 +2,32 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, Sparkles } from "lucide-react"
 
 import { useAddApp } from "@/lib/api/generated"
-import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { CODE_GEN_TYPE, CODE_GEN_TYPE_OPTIONS } from "@/lib/app-code-gen"
 import { getErrorMessage } from "@/lib/api/mutator/custom-fetch"
+import { CreateAppMenu } from "./create-app-menu"
 
 export function CreateAppForm() {
   const router = useRouter()
   const addAppMutation = useAddApp()
 
   const [prompt, setPrompt] = React.useState("")
-  const [codeGenType, setCodeGenType] = React.useState<string>(CODE_GEN_TYPE.MULTI_FILE)
   const [formError, setFormError] = React.useState<string | null>(null)
+  const promptRef = React.useRef<HTMLTextAreaElement>(null)
+  const submitting = React.useRef(false)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function createApp(codeGenType: string) {
+    if (submitting.current || addAppMutation.isPending) return
     setFormError(null)
 
     const trimmed = prompt.trim()
     if (!trimmed) {
       setFormError("请输入你想要的应用需求")
+      promptRef.current?.focus()
       return
     }
-    if (addAppMutation.isPending) return
+    submitting.current = true
 
     try {
       const response = await addAppMutation.mutateAsync({ data: { initPrompt: trimmed, codeGenType } })
@@ -43,12 +42,21 @@ export function CreateAppForm() {
       router.push(`/apps/${appId}`)
     } catch (error) {
       setFormError(getErrorMessage(error, "创建应用失败，请稍后重试"))
+    } finally {
+      submitting.current = false
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-3">
+    <form onSubmit={(event) => event.preventDefault()} noValidate className="flex flex-col gap-3 pb-4">
+      {formError && (
+        <p id="create-app-error" role="alert" className="text-sm text-destructive">
+          {formError}
+        </p>
+      )}
       <Textarea
+        ref={promptRef}
+        aria-label="应用需求"
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         placeholder="描述你想要的应用，例如：一个用于记录读书笔记的网站，支持按标签筛选"
@@ -58,34 +66,12 @@ export function CreateAppForm() {
         disabled={addAppMutation.isPending}
         className="text-sm"
       />
-      <div className="flex items-center justify-between gap-4">
-        {formError ? (
-          <p id="create-app-error" role="alert" className="text-sm text-destructive">
-            {formError}
-          </p>
-        ) : (
-          <span />
-        )}
-        <div className="flex items-center gap-2">
-          <Select
-            items={CODE_GEN_TYPE_OPTIONS}
-            value={codeGenType}
-            onValueChange={(v) => v && setCodeGenType(v)}
-            disabled={addAppMutation.isPending}
-          >
-            <SelectTrigger aria-label="生成类型" className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CODE_GEN_TYPE_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button type="submit" disabled={addAppMutation.isPending}>
-            {addAppMutation.isPending ? <Loader2 className="animate-spin" /> : <Sparkles />}
-            生成应用
-          </Button>
+      <div className="flex justify-end">
+        <div className="shrink-0">
+          <CreateAppMenu
+            onChoose={(codeGenType) => void createApp(codeGenType)}
+            pending={addAppMutation.isPending}
+          />
         </div>
       </div>
     </form>
