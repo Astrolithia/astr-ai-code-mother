@@ -2,6 +2,8 @@ package com.astr.astraicodemother.core;
 
 import com.astr.astraicodemother.ai.model.HtmlCodeResult;
 import com.astr.astraicodemother.ai.model.MultiFileCodeResult;
+import com.astr.astraicodemother.core.parser.HtmlCodeParser;
+import com.astr.astraicodemother.core.parser.MultiFileCodeParser;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -63,5 +65,21 @@ class CodeParserTest {
         assertNotNull(result.getHtmlCode());
         assertNotNull(result.getCssCode());
         assertNotNull(result.getJsCode());
+    }
+
+    @Test
+    void multiFileCodeCompleteOnlyWhenAllBlocksClosed() {
+        MultiFileCodeParser parser = new MultiFileCodeParser();
+        String htmlAndCss = "```html\n<p>a</p>\n```\n```css\np{}\n```\n";
+        assertFalse(parser.isCodeComplete(htmlAndCss));
+        assertFalse(parser.isCodeComplete(htmlAndCss + "```javascript\nconsole.log(1)"));
+        assertTrue(parser.isCodeComplete(htmlAndCss + "```javascript\nconsole.log(1)\n```"));
+    }
+
+    @Test
+    void htmlCodeCompleteOnlyWhenBlockClosed() {
+        HtmlCodeParser parser = new HtmlCodeParser();
+        assertFalse(parser.isCodeComplete("```html\n<p>a</p>\n``"));
+        assertTrue(parser.isCodeComplete("```html\n<p>a</p>\n```"));
     }
 }

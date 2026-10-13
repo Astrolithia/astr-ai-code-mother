@@ -4,6 +4,7 @@ import com.astr.astraicodemother.constant.AppConstant;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -53,8 +54,11 @@ public class StaticResourceController {
             }
             // 返回文件资源
             Resource resource = new FileSystemResource(file);
+            // Last-Modified 让前端判断 Vue 项目是否已重新构建；no-cache 保证预览每次都向服务端校验，不会展示旧构建
             return ResponseEntity.ok()
                     .header("Content-Type", getContentTypeWithCharset(filePath))
+                    .lastModified(file.lastModified())
+                    .cacheControl(CacheControl.noCache())
                     .body(resource);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();

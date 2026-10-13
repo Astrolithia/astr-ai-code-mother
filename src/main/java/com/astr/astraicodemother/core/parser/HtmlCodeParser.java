@@ -26,6 +26,11 @@ public class HtmlCodeParser implements CodeParser<HtmlCodeResult> {
         return result;
     }
 
+    @Override
+    public boolean isCodeComplete(String codeContent) {
+        return HTML_CODE_PATTERN.matcher(codeContent).find();
+    }
+
     /**
      * 提取HTML代码内容
      *

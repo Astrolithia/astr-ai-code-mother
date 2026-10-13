@@ -31,4 +31,19 @@ public class CodeParserExecutor {
             default -> throw new BusinessException(ErrorCode.SYSTEM_ERROR, "不支持的代码生成类型: " + codeGenType);
         };
     }
+
+    /**
+     * 判断流式内容中所需的代码块是否都已闭合
+     *
+     * @param codeContent 当前已接收的内容
+     * @param codeGenType 代码生成类型
+     * @return 是否可以提前解析并保存
+     */
+    public static boolean isCodeComplete(String codeContent, CodeGenTypeEnum codeGenType) {
+        return switch (codeGenType) {
+            case HTML -> htmlCodeParser.isCodeComplete(codeContent);
+            case MULTI_FILE -> multiFileCodeParser.isCodeComplete(codeContent);
+            default -> false;
+        };
+    }
 }
