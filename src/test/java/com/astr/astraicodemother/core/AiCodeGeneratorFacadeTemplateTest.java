@@ -30,8 +30,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -132,6 +135,56 @@ class AiCodeGeneratorFacadeTemplateTest {
             verify(aiCodeGeneratorService).generateMultiCodeStream(modelInput);
         }
         verify(codeTemplatePromptEnhancer).enhance(USER_MESSAGE, codeGenType);
+    }
+
+    @Test
+    @DisplayName("代码块闭合后立即保存并插入 FILES_READY 信号，结束时结果相同则不重复保存")
+    void streamingSavesAsSoonAsCodeBlocksClose() {
+        String modelInput = prepareGeneration(CodeGenTypeEnum.HTML);
+        List<String> chunks = List.of("```html\n<h1>", "测试页面</h1>\n```", "\n页面已生成。");
+        when(aiCodeGeneratorService.generateHtmlCodeStream(modelInput)).thenReturn(Flux.fromIterable(chunks));
+
+        // 使用真实解析器，只拦截文件写入
+        try (MockedStatic<CodeFileSaverExecutor> saver = mockStatic(CodeFileSaverExecutor.class)) {
+            saver.when(() -> CodeFileSaverExecutor.executeSaver(any(), eq(CodeGenTypeEnum.HTML), eq(APP_ID)))
+                    .thenReturn(new File("mock-output"));
+
+            List<String> result = facade.generateAndSaveCodeStream(USER_MESSAGE, CodeGenTypeEnum.HTML, APP_ID)
+                    .collectList()
+                    .block(Duration.ofSeconds(5));
+
+            assertEquals(List.of(chunks.get(0), chunks.get(1), StreamSignal.FILES_READY, chunks.get(2)), result);
+            HtmlCodeResult expected = new HtmlCodeResult();
+            expected.setHtmlCode("<h1>测试页面</h1>");
+            saver.verify(() -> CodeFileSaverExecutor.executeSaver(expected, CodeGenTypeEnum.HTML, APP_ID), times(1));
+        }
+    }
+
+    @Test
+    @DisplayName("提前保存后最终解析结果不同，则再次保存并再发一次 FILES_READY")
+    void streamingResavesWhenFinalResultDiffers() {
+        String modelInput = prepareGeneration(CodeGenTypeEnum.HTML);
+        List<String> chunks = List.of("```html\n<h1>A</h1>\n```", "补充");
+        when(aiCodeGeneratorService.generateHtmlCodeStream(modelInput)).thenReturn(Flux.fromIterable(chunks));
+        Object early = "early";
+        Object fin = "final";
+
+        try (MockedStatic<CodeParserExecutor> parser = mockStatic(CodeParserExecutor.class);
+             MockedStatic<CodeFileSaverExecutor> saver = mockStatic(CodeFileSaverExecutor.class)) {
+            parser.when(() -> CodeParserExecutor.isCodeComplete(chunks.get(0), CodeGenTypeEnum.HTML)).thenReturn(true);
+            parser.when(() -> CodeParserExecutor.executeParser(chunks.get(0), CodeGenTypeEnum.HTML)).thenReturn(early);
+            parser.when(() -> CodeParserExecutor.executeParser(String.join("", chunks), CodeGenTypeEnum.HTML)).thenReturn(fin);
+            saver.when(() -> CodeFileSaverExecutor.executeSaver(any(), eq(CodeGenTypeEnum.HTML), eq(APP_ID)))
+                    .thenReturn(new File("mock-output"));
+
+            List<String> result = facade.generateAndSaveCodeStream(USER_MESSAGE, CodeGenTypeEnum.HTML, APP_ID)
+                    .collectList()
+                    .block(Duration.ofSeconds(5));
+
+            assertEquals(List.of(chunks.get(0), StreamSignal.FILES_READY, chunks.get(1), StreamSignal.FILES_READY), result);
+            saver.verify(() -> CodeFileSaverExecutor.executeSaver(early, CodeGenTypeEnum.HTML, APP_ID));
+            saver.verify(() -> CodeFileSaverExecutor.executeSaver(fin, CodeGenTypeEnum.HTML, APP_ID));
+        }
     }
 
     @Test

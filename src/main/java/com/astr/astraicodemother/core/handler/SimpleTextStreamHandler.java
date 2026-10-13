@@ -1,11 +1,13 @@
 package com.astr.astraicodemother.core.handler;
 
+import com.astr.astraicodemother.core.StreamSignal;
 import com.astr.astraicodemother.model.entity.User;
 import com.astr.astraicodemother.model.enums.ChatHistoryMessageTypeEnum;
 import com.astr.astraicodemother.service.ChatHistoryService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
+
 
 /**
  * 简单文本流处理器
@@ -31,8 +33,10 @@ public class SimpleTextStreamHandler {
         StringBuilder aiResponseBuilder = new StringBuilder();
         return originFlux
                 .map(chunk -> {
-                    // 收集AI响应内容
-                    aiResponseBuilder.append(chunk);
+                    // 收集AI响应内容（控制信号不属于 AI 回复，不写入对话历史）
+                    if (!StreamSignal.isSignal(chunk)) {
+                        aiResponseBuilder.append(chunk);
+                    }
                     return chunk;
                 })
                 .doOnComplete(() -> {

@@ -21,8 +21,10 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.io.File;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 @Slf4j
@@ -131,21 +133,53 @@ public class AiCodeGeneratorFacade {
      * @return 流式响应
      */
     private Flux<String> processCodeStream(Flux<String> codeStream, CodeGenTypeEnum codeGenType, Long appId) {
-        // 字符串拼接，用于当流式返回所有代码之后，再保存代码
+        // 字符串拼接，用于解析并保存代码
         StringBuilder codeBuilder = new StringBuilder();
-        // 实时收集代码片段
-        return codeStream.doOnNext(codeBuilder::append).doOnComplete(() -> {
-            try {
-                // 流式返回成功后，保存代码
-                String completeCode = codeBuilder.toString();
-                // 解析代码为对象
-                Object parseResult = CodeParserExecutor.executeParser(completeCode, codeGenType);
-                // 使用执行器保存代码
-                File saveDir = CodeFileSaverExecutor.executeSaver(parseResult, codeGenType, appId);
-                log.info("保存成功, 目录为: {}", saveDir.getAbsolutePath());
-            } catch (Exception e) {
-                log.info("保存失败: {}", e.getMessage());
-            }
-        });
+        // 所需代码块全部闭合时提前保存的解析结果，AI 之后输出的说明文字不必再等待
+        AtomicReference<Object> earlySaved = new AtomicReference<>();
+        return codeStream
+                .concatMap(chunk -> {
+                    codeBuilder.append(chunk);
+                    // 只有出现反引号时代码块才可能闭合，避免每个片段都对全文做正则匹配
+                    if (earlySaved.get() == null && chunk.contains("`")
+                            && CodeParserExecutor.isCodeComplete(codeBuilder.toString(), codeGenType)) {
+                        Object parseResult = saveCode(codeBuilder.toString(), codeGenType, appId);
+                        if (parseResult != null) {
+                            earlySaved.set(parseResult);
+                            return Flux.just(chunk, StreamSignal.FILES_READY);
+                        }
+                    }
+                    return Flux.just(chunk);
+                })
+                // 流式返回成功后，按完整内容再解析一次；与提前保存的结果一致时无需重复写入
+                .concatWith(Mono.fromCallable(() -> {
+                    String completeCode = codeBuilder.toString();
+                    Object early = earlySaved.get();
+                    if (early != null && early.equals(CodeParserExecutor.executeParser(completeCode, codeGenType))) {
+                        return null;
+                    }
+                    Object parseResult = saveCode(completeCode, codeGenType, appId);
+                    // 提前保存过但最终内容不同，需要通知前端再刷新一次；未提前保存时由结束事件触发刷新
+                    return early != null && parseResult != null ? StreamSignal.FILES_READY : null;
+                }));
+    }
+
+    /**
+     * 解析并保存代码
+     *
+     * @return 解析结果；保存失败时返回 null
+     */
+    private Object saveCode(String code, CodeGenTypeEnum codeGenType, Long appId) {
+        try {
+            // 解析代码为对象
+            Object parseResult = CodeParserExecutor.executeParser(code, codeGenType);
+            // 使用执行器保存代码
+            File saveDir = CodeFileSaverExecutor.executeSaver(parseResult, codeGenType, appId);
+            log.info("保存成功, 目录为: {}", saveDir.getAbsolutePath());
+            return parseResult;
+        } catch (Exception e) {
+            log.info("保存失败: {}", e.getMessage());
+            return null;
+        }
     }
 }

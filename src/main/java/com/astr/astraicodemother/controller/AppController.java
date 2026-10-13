@@ -24,6 +24,7 @@ import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
+import com.astr.astraicodemother.core.StreamSignal;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
@@ -60,6 +61,13 @@ public class AppController {
         Flux<String> contentFlux = appService.chatToGenCode(appId, message, loginUser);
         return contentFlux
                 .map(chunk -> {
+                    // 代码文件已提前保存，通知前端立即刷新预览
+                    if (StreamSignal.isSignal(chunk)) {
+                        return ServerSentEvent.<String>builder()
+                                .event(StreamSignal.FILES_READY_EVENT)
+                                .data("")
+                                .build();
+                    }
                     Map<String, String> wrapper = Map.of("d", chunk);
                     String jsonData = JSONUtil.toJsonStr(wrapper);
                     return ServerSentEvent.<String>builder()

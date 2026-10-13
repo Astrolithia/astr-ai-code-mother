@@ -36,6 +36,13 @@ public class MultiFileCodeParser implements CodeParser<MultiFileCodeResult> {
         return result;
     }
 
+    @Override
+    public boolean isCodeComplete(String codeContent) {
+        return HTML_CODE_PATTERN.matcher(codeContent).find()
+                && CSS_CODE_PATTERN.matcher(codeContent).find()
+                && JS_CODE_PATTERN.matcher(codeContent).find();
+    }
+
     /**
      * 根据正则模式提取代码
      *
