@@ -98,6 +98,13 @@ public class JsonMessageStreamHandler {
                 ToolExecutedMessage toolExecutedMessage = JSONUtil.toBean(chunk, ToolExecutedMessage.class);
                 JSONObject jsonObject = JSONUtil.parseObj(toolExecutedMessage.getArguments());
                 String relativeFilePath = jsonObject.getStr("relativeFilePath");
+                String toolResult = toolExecutedMessage.getResult();
+                if (toolResult == null || !toolResult.startsWith("文件写入成功")) {
+                    // 写入失败不带代码块：前端代码区和历史记忆还原都不会把它当成已写入的文件
+                    String output = String.format("\n\n[工具调用失败] 写入文件 %s：%s\n\n", relativeFilePath, toolResult);
+                    chatHistoryStringBuilder.append(output);
+                    return output;
+                }
                 String suffix = FileUtil.getSuffix(relativeFilePath);
                 String content = jsonObject.getStr("content");
                 String result = String.format("""

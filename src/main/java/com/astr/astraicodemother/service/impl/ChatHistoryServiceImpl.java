@@ -2,6 +2,7 @@ package com.astr.astraicodemother.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import com.astr.astraicodemother.exception.BusinessException;
 import com.astr.astraicodemother.exception.ErrorCode;
 import com.astr.astraicodemother.exception.ThrowUtils;
@@ -13,15 +14,22 @@ import com.astr.astraicodemother.service.ChatHistoryService;
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 对话历史 服务层实现。
@@ -31,6 +39,12 @@ import java.util.List;
 @Slf4j
 @Service
 public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatHistory> implements ChatHistoryService {
+
+    /**
+     * Vue 工程模式入库时，每次 writeFile 工具调用被展开成这段文本（见 JsonMessageStreamHandler）
+     */
+    private static final Pattern TOOL_WRITE_FILE_PATTERN =
+            Pattern.compile("\\[工具调用] 写入文件 (\\S+)\\n```\\w*\\n([\\s\\S]*?)\\n```");
 
     @Override
     public boolean addChatMessage(Long appId, String message, String messageType, Long userId) {
@@ -117,7 +131,7 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
                     chatMemory.add(UserMessage.from(history.getMessage()));
                     loadedCount++;
                 } else if (ChatHistoryMessageTypeEnum.AI.getValue().equals(history.getMessageType())) {
-                    chatMemory.add(AiMessage.from(history.getMessage()));
+                    toAiMemoryMessages(history).forEach(chatMemory::add);
                     loadedCount++;
                 }
             }
@@ -128,5 +142,39 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
             // 加载失败不影响系统运行，只是没有历史上下文
             return 0;
         }
+    }
+
+    /**
+     * 把入库的 AI 回复还原为记忆消息。
+     * 文本中的工具调用要还原成真实的工具请求和执行结果：若作为普通文本放回记忆，
+     * 模型会模仿这段文本格式"假装"写文件，而不再真正调用 writeFile 工具。
+     */
+    private List<ChatMessage> toAiMemoryMessages(ChatHistory history) {
+        String message = history.getMessage();
+        Matcher matcher = TOOL_WRITE_FILE_PATTERN.matcher(message);
+        List<ChatMessage> messages = new ArrayList<>();
+        int textStart = 0;
+        while (matcher.find()) {
+            String relativeFilePath = matcher.group(1);
+            ToolExecutionRequest request = ToolExecutionRequest.builder()
+                    .id("history-" + history.getId() + "-" + messages.size() / 2)
+                    .name("writeFile")
+                    .arguments(JSONUtil.toJsonStr(Map.of(
+                            "relativeFilePath", relativeFilePath,
+                            "content", matcher.group(2))))
+                    .build();
+            String text = message.substring(textStart, matcher.start()).strip();
+            messages.add(text.isEmpty() ? AiMessage.from(request) : AiMessage.from(text, List.of(request)));
+            messages.add(ToolExecutionResultMessage.from(request, "文件写入成功：" + relativeFilePath));
+            textStart = matcher.end();
+        }
+        if (messages.isEmpty()) {
+            return List.of(AiMessage.from(message));
+        }
+        String tailText = message.substring(textStart).strip();
+        if (!tailText.isEmpty()) {
+            messages.add(AiMessage.from(tailText));
+        }
+        return messages;
     }
 }
