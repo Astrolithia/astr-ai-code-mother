@@ -1,21 +1,43 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, SendHorizontal, TriangleAlert } from "lucide-react"
+import { FileCode, Loader2, MousePointerClick, SendHorizontal, TriangleAlert, X } from "lucide-react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import type { VisualEditorStatus } from "@/hooks/use-visual-editor"
+import { describeSelectedElement, type SelectedElement } from "@/lib/visual-edit"
 
 export interface ChatMessage {
   id: string
   role: "user" | "assistant"
   content: string
   pending?: boolean
+  /** Label of the element a visual-edit message targeted, e.g. `<button#buy>`. */
+  target?: string
+}
+
+export interface VisualEditControls {
+  status: VisualEditorStatus
+  /** Why edit mode can't be entered right now; null when it can. */
+  unavailableReason: string | null
+  selected: SelectedElement | null
+  error: string | null
+  onToggle: () => void
+  onClearSelection: () => void
 }
 
 const NEAR_BOTTOM_THRESHOLD_PX = 96
+
+// Fence languages the generators write files in (html/css/js for the text
+// modes, file suffixes for Vue). Other blocks, e.g. a shell command in a plain
+// answer, still render inline.
+const GENERATED_CODE_LANGUAGES = new Set([
+  "html", "css", "js", "javascript", "vue", "ts", "tsx", "jsx", "json", "scss", "less",
+])
 
 // Hand-rolled Tailwind classes per element instead of @tailwindcss/typography's
 // `prose` — that plugin injects its own font-size scale, which conflicts with
@@ -53,11 +75,30 @@ const markdownComponents: Components = {
     </blockquote>
   ),
   hr: () => <hr className="my-3 border-border" />,
-  pre: ({ children }) => (
-    <pre className="my-2 overflow-x-auto rounded-md bg-muted p-3 first:mt-0 last:mb-0">
-      {children}
-    </pre>
-  ),
+  pre: ({ node, children }) => {
+    // Generated files are shown in the code tabs above the preview; a
+    // pointer here keeps the conversation readable.
+    const code = node?.children[0]
+    const classNames = code?.type === "element" ? code.properties.className : undefined
+    const language = Array.isArray(classNames)
+      ? classNames.map(String).find((c) => c.startsWith("language-"))?.slice("language-".length)
+      : undefined
+    if (language && GENERATED_CODE_LANGUAGES.has(language.toLowerCase())) {
+      return (
+        <p className="my-2 flex items-center gap-1.5 text-sm text-muted-foreground first:mt-0 last:mb-0">
+          <FileCode size={16} className="shrink-0" />
+          <span>
+            <span className="font-mono">{language}</span> 代码已显示在预览上方的代码区
+          </span>
+        </p>
+      )
+    }
+    return (
+      <pre className="my-2 overflow-x-auto rounded-md bg-muted p-3 first:mt-0 last:mb-0">
+        {children}
+      </pre>
+    )
+  },
   code: ({ className, children, ...props }) => {
     const text = String(children).replace(/\n$/, "")
     const isInline = !className && !text.includes("\n")
@@ -92,6 +133,11 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             : "border border-border bg-background text-foreground"
         }`}
       >
+        {isUser && message.target && (
+          <span className="mb-1 block truncate font-mono text-xs opacity-70">
+            针对元素 {message.target}
+          </span>
+        )}
         {isUser ? (
           <span className="whitespace-pre-wrap">{message.content}</span>
         ) : (
@@ -122,12 +168,14 @@ export function ChatPanel({
   loadingMoreHistory,
   onLoadMoreHistory,
   historyPrependVersion,
+  visualEdit,
 }: {
   messages: ChatMessage[]
   streaming: boolean
   streamError: string | null
   disabled?: boolean
-  onSend: (text: string) => void
+  /** Returns false when the message couldn't be sent; the draft is kept. */
+  onSend: (text: string) => boolean
   hasMoreHistory?: boolean
   loadingMoreHistory?: boolean
   onLoadMoreHistory?: () => void
@@ -136,8 +184,10 @@ export function ChatPanel({
    *  apart from "a new message arrived", which need opposite scroll
    *  handling (keep position vs. jump to bottom). */
   historyPrependVersion?: number
+  visualEdit?: VisualEditControls
 }) {
   const [draft, setDraft] = React.useState("")
+  const editing = visualEdit?.status === "loading" || visualEdit?.status === "ready"
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const wasNearBottomRef = React.useRef(true)
   const prevScrollHeightRef = React.useRef(0)
@@ -171,8 +221,7 @@ export function ChatPanel({
     const trimmed = draft.trim()
     if (!trimmed || streaming || disabled) return
     wasNearBottomRef.current = true
-    onSend(trimmed)
-    setDraft("")
+    if (onSend(trimmed)) setDraft("")
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -218,16 +267,83 @@ export function ChatPanel({
             {streamError}
           </p>
         )}
+        {visualEdit?.error && (
+          <p role="alert" className="mb-2 flex items-start gap-1.5 text-sm text-destructive">
+            <TriangleAlert size={16} className="mt-0.5 shrink-0" />
+            {visualEdit.error}
+          </p>
+        )}
+        {visualEdit?.selected ? (
+          <Alert role="status" className="mb-2">
+            <AlertTitle className="truncate font-mono">
+              {describeSelectedElement(visualEdit.selected)}
+            </AlertTitle>
+            <AlertDescription className="min-w-0">
+              {visualEdit.selected.className && (
+                <span className="block truncate font-mono text-xs">
+                  class=&quot;{visualEdit.selected.className}&quot;
+                </span>
+              )}
+              <span className="line-clamp-2 break-all">
+                {visualEdit.selected.text || "（该元素没有文本内容）"}
+              </span>
+            </AlertDescription>
+            <AlertAction>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="移除选择"
+                onClick={visualEdit.onClearSelection}
+              >
+                <X />
+              </Button>
+            </AlertAction>
+          </Alert>
+        ) : (
+          visualEdit?.status === "ready" && (
+            <p className="mb-2 text-sm text-muted-foreground">
+              在预览中点击要修改的元素，发送时会附带该元素的信息
+            </p>
+          )
+        )}
         <form onSubmit={handleSubmit} className="flex items-end gap-2">
           <Textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={disabled ? "该应用不属于你，无法继续对话" : "描述你想要的改动，Enter 发送，Shift+Enter 换行"}
+            placeholder={
+              disabled
+                ? "该应用不属于你，无法继续对话"
+                : visualEdit?.selected
+                  ? "描述你想对选中元素做的修改，Enter 发送"
+                  : "描述你想要的改动，Enter 发送，Shift+Enter 换行"
+            }
             rows={2}
             disabled={disabled || streaming}
             className="flex-1 text-sm"
           />
+          {visualEdit && (
+            <Button
+              type="button"
+              variant={editing ? "secondary" : "outline"}
+              aria-pressed={editing}
+              disabled={
+                disabled ||
+                streaming ||
+                visualEdit.status === "loading" ||
+                (!editing && visualEdit.unavailableReason !== null)
+              }
+              title={!editing ? (visualEdit.unavailableReason ?? undefined) : undefined}
+              onClick={visualEdit.onToggle}
+            >
+              {visualEdit.status === "loading" ? <Loader2 className="animate-spin" /> : <MousePointerClick />}
+              {/* Icon-only below sm so the textarea keeps its width; the label stays the accessible name. */}
+              <span className="sr-only sm:not-sr-only">
+                {visualEdit.status === "loading" ? "准备中" : editing ? "退出编辑" : "可视化编辑"}
+              </span>
+            </Button>
+          )}
           <Button type="submit" disabled={disabled || streaming || !draft.trim()} aria-label="发送">
             {streaming ? <Loader2 className="animate-spin" /> : <SendHorizontal />}
             {streaming ? "生成中" : "发送"}

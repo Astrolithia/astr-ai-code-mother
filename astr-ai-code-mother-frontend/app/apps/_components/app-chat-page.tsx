@@ -11,10 +11,18 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError, BUSINESS_ERROR_CODE, getErrorMessage } from "@/lib/api/mutator/custom-fetch"
 import { streamChatToGenCode } from "@/lib/api/chat-stream"
 import { asApiId } from "@/lib/app-id"
-import { needsBuild } from "@/lib/app-code-gen"
+import { CODE_GEN_TYPE, formatCodeGenType, needsBuild } from "@/lib/app-code-gen"
+import { getAppPreviewUrl } from "@/lib/app-preview-url"
 import { useCurrentUser } from "@/lib/auth"
+import {
+  buildVisualEditMessage,
+  describeSelectedElement,
+  parseVisualEditMessage,
+  VisualEditMessageError,
+} from "@/lib/visual-edit"
+import { useVisualEditor } from "@/hooks/use-visual-editor"
 import { ChatPanel, type ChatMessage } from "@/app/apps/_components/chat-panel"
-import { PreviewPanel } from "@/app/apps/_components/preview-panel"
+import { PreviewPanel, type CodeFile } from "@/app/apps/_components/preview-panel"
 
 const HISTORY_PAGE_SIZE = 10
 
@@ -25,11 +33,46 @@ function nextMessageId(): string {
 }
 
 function toChatMessage(chatHistory: ChatHistory): ChatMessage {
+  const role = chatHistory.messageType === "ai" ? "assistant" : "user"
+  const content = chatHistory.message ?? ""
+  // History stores the full visual-edit prompt; show only the user's words.
+  const visualEdit = role === "user" ? parseVisualEditMessage(content) : null
   return {
     id: String(chatHistory.id),
-    role: chatHistory.messageType === "ai" ? "assistant" : "user",
-    content: chatHistory.message ?? "",
+    role,
+    content: visualEdit?.text ?? content,
+    target: visualEdit?.target ?? undefined,
   }
+}
+
+// Mirrors HtmlCodeParser / MultiFileCodeParser. `$` lets a block that is
+// still streaming (no closing fence yet) show up as it grows.
+const TEXT_CODE_FENCE = /```(html|css|js|javascript)\s*\n([\s\S]*?)(?:```|$)/gi
+const TEXT_CODE_FILE_NAME: Record<string, string> = {
+  html: "index.html",
+  css: "style.css",
+  js: "script.js",
+}
+// One match per file the Vue agent wrote (JsonMessageStreamHandler's TOOL_EXECUTED output).
+const VUE_FILE_WRITE = /\[工具调用\] 写入文件 (\S+)\n```(\w*)\n([\s\S]*?)(?:\n```|$)/g
+
+function extractCodeFiles(content: string, codeGenType?: string): CodeFile[] {
+  const files = new Map<string, CodeFile>()
+  if (codeGenType === CODE_GEN_TYPE.VUE_PROJECT) {
+    // A file rewritten later in the same round keeps its tab position but shows the latest content.
+    for (const [, path, language, code] of content.matchAll(VUE_FILE_WRITE)) {
+      files.set(path, { path, language, code: code.trimEnd() })
+    }
+    return [...files.values()]
+  }
+  for (const [, rawLanguage, code] of content.matchAll(TEXT_CODE_FENCE)) {
+    const language = rawLanguage.toLowerCase() === "javascript" ? "js" : rawLanguage.toLowerCase()
+    if (codeGenType === CODE_GEN_TYPE.HTML && language !== "html") continue
+    const path = TEXT_CODE_FILE_NAME[language]
+    // The backend saves the first block of each language, so the tabs do too.
+    if (!files.has(path)) files.set(path, { path, language, code: code.trimEnd() })
+  }
+  return [...files.values()]
 }
 
 export function AppChatPage({ appId }: { appId: string }) {
@@ -41,6 +84,8 @@ export function AppChatPage({ appId }: { appId: string }) {
   const [streaming, setStreaming] = React.useState(false)
   const [streamError, setStreamError] = React.useState<string | null>(null)
   const [generationVersion, setGenerationVersion] = React.useState(0)
+  // True once this round's files are saved, even if the AI is still streaming.
+  const [filesReady, setFilesReady] = React.useState(false)
   const [previewAvailable, setPreviewAvailable] = React.useState(false)
   const [deployUrl, setDeployUrl] = React.useState<string | null>(null)
 
@@ -61,10 +106,12 @@ export function AppChatPage({ appId }: { appId: string }) {
   const autoSentRef = React.useRef(false)
   const deployMutation = useDeployApp()
 
+  // `text` is what the chat shows; `prompt` is what the backend receives
+  // (the same, unless visual-edit context was attached).
   const sendMessage = React.useCallback(
-    (text: string) => {
+    (text: string, prompt: string = text, target?: string) => {
       setStreamError(null)
-      const userMessage: ChatMessage = { id: nextMessageId(), role: "user", content: text }
+      const userMessage: ChatMessage = { id: nextMessageId(), role: "user", content: text, target }
       const assistantMessage: ChatMessage = {
         id: nextMessageId(),
         role: "assistant",
@@ -73,25 +120,33 @@ export function AppChatPage({ appId }: { appId: string }) {
       }
       setMessages((prev) => [...prev, userMessage, assistantMessage])
       setStreaming(true)
+      setFilesReady(false)
+      let previewRefreshed = false
 
       const controller = new AbortController()
       abortRef.current = controller
 
       streamChatToGenCode(
         appId,
-        text,
+        prompt,
         {
           onChunk: (chunk) => {
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantMessage.id ? { ...m, content: m.content + chunk } : m)),
             )
           },
+          onFilesReady: () => {
+            previewRefreshed = true
+            setFilesReady(true)
+            setGenerationVersion((v) => v + 1)
+          },
           onDone: () => {
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantMessage.id ? { ...m, pending: false } : m)),
             )
             setStreaming(false)
-            setGenerationVersion((v) => v + 1)
+            // Already showing this round's files; reloading would only flicker.
+            if (!previewRefreshed) setGenerationVersion((v) => v + 1)
           },
           onError: (message) => {
             setMessages((prev) =>
@@ -208,13 +263,57 @@ export function AppChatPage({ appId }: { appId: string }) {
     return () => abortRef.current?.abort()
   }, [])
 
+  const previewUrl = app?.codeGenType ? getAppPreviewUrl(app.codeGenType, appId) : null
+  const visualEditor = useVisualEditor({
+    previewUrl,
+    previewVersion: generationVersion,
+    canEdit: isOwner && previewAvailable && !streaming,
+  })
+  const visualEditUnavailableReason = !isOwner
+    ? "只有应用所有者可以使用可视化编辑"
+    : streaming
+      ? "生成中，完成后可使用可视化编辑"
+      : !previewAvailable
+        ? "预览可用后才能使用可视化编辑"
+        : null
+
+  function handleSend(text: string): boolean {
+    const selected = visualEditor.selected
+    let prompt = text
+    if (selected) {
+      try {
+        prompt = buildVisualEditMessage(appId, text, selected)
+      } catch (error) {
+        // Keep draft, selection and edit mode so the user can shorten and retry.
+        setStreamError(error instanceof VisualEditMessageError ? error.message : "附带选中元素失败，请重试")
+        return false
+      }
+    }
+    visualEditor.exit()
+    sendMessage(text, prompt, selected ? describeSelectedElement(selected) : undefined)
+    return true
+  }
+
   const displayedMessages = React.useMemo(
     () => [...historyMessages, ...messages],
     [historyMessages, messages],
   )
 
+  // Files from the latest reply that produced code — a reply without code
+  // (plain Q&A, or a new round that hasn't reached its code yet) keeps the
+  // previous files on screen.
+  const codeFiles = React.useMemo(() => {
+    for (let i = displayedMessages.length - 1; i >= 0; i--) {
+      const message = displayedMessages[i]
+      if (message.role !== "assistant") continue
+      const files = extractCodeFiles(message.content, app?.codeGenType)
+      if (files.length > 0) return files
+    }
+    return []
+  }, [displayedMessages, app?.codeGenType])
+
   async function handleDeploy() {
-    if (!previewAvailable || deployMutation.isPending) return
+    if (!previewAvailable || streaming || deployMutation.isPending) return
     try {
       const response = await deployMutation.mutateAsync({ data: { appId: asApiId(appId) } })
       if (response.data) setDeployUrl(response.data)
@@ -243,7 +342,14 @@ export function AppChatPage({ appId }: { appId: string }) {
               {getErrorMessage(appQuery.error, "应用加载失败")}
             </span>
           ) : (
-            <h1 className="truncate text-lg font-medium">{app?.appName || "未命名应用"}</h1>
+            <>
+              <h1 className="truncate text-lg font-medium">{app?.appName || "未命名应用"}</h1>
+              {app?.codeGenType && (
+                <span className="shrink-0 text-sm text-muted-foreground">
+                  {formatCodeGenType(app.codeGenType)}
+                </span>
+              )}
+            </>
           )}
         </div>
 
@@ -267,7 +373,7 @@ export function AppChatPage({ appId }: { appId: string }) {
             )}
             <Button
               size="sm"
-              disabled={!previewAvailable || deployMutation.isPending}
+              disabled={!previewAvailable || streaming || deployMutation.isPending}
               onClick={handleDeploy}
               title={!previewAvailable ? "请先完成一次生成再部署" : undefined}
             >
@@ -290,21 +396,35 @@ export function AppChatPage({ appId }: { appId: string }) {
             streaming={streaming}
             streamError={streamError}
             disabled={!appQuery.isLoading && !isOwner}
-            onSend={sendMessage}
+            onSend={handleSend}
             hasMoreHistory={hasMoreHistory}
             loadingMoreHistory={loadingMoreHistory}
             onLoadMoreHistory={loadMoreHistory}
             historyPrependVersion={historyPrependVersion}
+            visualEdit={{
+              status: visualEditor.status,
+              unavailableReason: visualEditUnavailableReason,
+              selected: visualEditor.selected,
+              error: visualEditor.error,
+              onToggle: visualEditor.toggle,
+              onClearSelection: visualEditor.clearSelection,
+            }}
           />
         </div>
         <div className="flex min-h-[60vh] flex-col lg:min-h-0">
           <PreviewPanel
             appId={appId}
             codeGenType={app?.codeGenType}
-            streaming={streaming}
+            // Files saved mid-stream are previewable right away.
+            streaming={streaming && !filesReady}
             generationVersion={generationVersion}
             hasPriorGeneration={historyTotal >= 2}
             onAvailabilityChange={setPreviewAvailable}
+            visualEditStatus={visualEditor.status}
+            visualEditFrame={visualEditor.frame}
+            visualEditFrameRef={visualEditor.iframeRef}
+            onVisualEditPointerLeave={visualEditor.clearHover}
+            codeFiles={codeFiles}
           />
         </div>
       </div>

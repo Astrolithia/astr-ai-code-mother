@@ -1,11 +1,16 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, RefreshCw, Sparkles, TriangleAlert } from "lucide-react"
+import { ChevronDown, ChevronUp, MousePointerClick, RefreshCw, Sparkles, TriangleAlert } from "lucide-react"
 
+import { Orb } from "@/components/orb"
+import { PreviewLoading } from "@/app/apps/_components/preview-loading"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { needsBuild } from "@/lib/app-code-gen"
 import { getAppPreviewUrl } from "@/lib/app-preview-url"
+import { VISUAL_EDIT_FRAME_SANDBOX } from "@/lib/visual-edit"
+import type { VisualEditFrame, VisualEditorStatus } from "@/hooks/use-visual-editor"
 
 type PreviewState = "checking" | "building" | "available" | "unavailable" | "check-error" | "build-failed"
 
@@ -17,19 +22,100 @@ function StatusOverlay({
   icon: Icon,
   message,
   action,
-  spin,
 }: {
   icon: React.ElementType
   message: string
   action?: React.ReactNode
-  spin?: boolean
 }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-12 text-center">
-      <Icon className={`text-muted-foreground ${spin ? "animate-spin" : ""}`} size={20} />
+      <Icon className="text-muted-foreground" size={20} />
       <p className="text-sm text-muted-foreground">{message}</p>
       {action}
     </div>
+  )
+}
+
+/** Mount with a key for each preview URL/version or editing session, so a
+ * previous iframe's load event cannot dismiss the next preview's loader. */
+function LoadingPreviewFrame({
+  frameRef,
+  ...props
+}: Pick<React.ComponentProps<"iframe">, "src" | "srcDoc" | "sandbox" | "title" | "onPointerLeave"> & {
+  frameRef?: React.Ref<HTMLIFrameElement>
+}) {
+  const [loaded, setLoaded] = React.useState(false)
+
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col" aria-busy={!loaded}>
+      {/* Keep the frame mounted while loading: hiding it with display:none
+          would interfere with layout and the visual editor's measurements. */}
+      <iframe
+        {...props}
+        ref={frameRef}
+        onLoad={() => setLoaded(true)}
+        aria-hidden={!loaded}
+        tabIndex={loaded ? undefined : -1}
+        className={`min-h-0 w-full flex-1 border-0 bg-white ${loaded ? "" : "invisible"}`}
+      />
+      {!loaded && (
+        <PreviewLoading message="正在加载网页预览…" className="absolute inset-0" />
+      )}
+    </div>
+  )
+}
+
+export interface CodeFile {
+  /** index.html / style.css / script.js, or the Vue project's relative path. */
+  path: string
+  language: string
+  code: string
+}
+
+function CodeFilesPanel({ files, streaming }: { files: CodeFile[]; streaming: boolean }) {
+  const [selected, setSelected] = React.useState<string | null>(null)
+  const [collapsed, setCollapsed] = React.useState(false)
+  // Until the user picks a tab, follow the file being written while
+  // streaming, then settle on the first one (the entry HTML).
+  const fallback = streaming ? files[files.length - 1] : files[0]
+  const active = files.some((f) => f.path === selected) ? selected : fallback?.path
+
+  return (
+    <Tabs
+      value={active}
+      onValueChange={(value) => {
+        setSelected(String(value))
+        setCollapsed(false)
+      }}
+      className="shrink-0 gap-0 border-b border-border"
+    >
+      <div className="flex items-center gap-2 px-4 py-2">
+        <TabsList className="min-w-0 flex-1 justify-start overflow-x-auto">
+          {files.map((file) => (
+            <TabsTrigger key={file.path} value={file.path} title={file.path} className="flex-none font-mono">
+              {file.path.split("/").pop()}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={collapsed ? "展开代码" : "收起代码"}
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed((c) => !c)}
+        >
+          {collapsed ? <ChevronDown /> : <ChevronUp />}
+        </Button>
+      </div>
+      {!collapsed &&
+        files.map((file) => (
+          <TabsContent key={file.path} value={file.path} className="flex-none">
+            <pre className="h-48 overflow-auto bg-muted px-4 py-3 lg:h-72">
+              <code className="font-mono text-xs">{file.code}</code>
+            </pre>
+          </TabsContent>
+        ))}
+    </Tabs>
   )
 }
 
@@ -40,6 +126,11 @@ export function PreviewPanel({
   generationVersion,
   hasPriorGeneration,
   onAvailabilityChange,
+  visualEditStatus = "off",
+  visualEditFrame = null,
+  visualEditFrameRef,
+  onVisualEditPointerLeave,
+  codeFiles = [],
 }: {
   appId: string
   codeGenType?: string
@@ -51,20 +142,31 @@ export function PreviewPanel({
    *  anything. Ignored after generationVersion advances past 0. */
   hasPriorGeneration: boolean
   onAvailabilityChange: (available: boolean) => void
+  visualEditStatus?: VisualEditorStatus
+  /** While set, the instrumented copy replaces the live preview. */
+  visualEditFrame?: VisualEditFrame | null
+  visualEditFrameRef?: React.Ref<HTMLIFrameElement>
+  onVisualEditPointerLeave?: () => void
+  /** Files from the latest reply that produced code, shown as tabs above the preview. */
+  codeFiles?: CodeFile[]
 }) {
   const [state, setState] = React.useState<PreviewState>("checking")
   const previewUrl = codeGenType ? getAppPreviewUrl(codeGenType, appId) : null
   const buildRequired = needsBuild(codeGenType)
-  // dist/index.html as it was before the current round started streaming
-  // (null = no build yet). Vite fingerprints asset names into index.html, so
-  // a changed body means the backend's async rebuild has finished — without
-  // this, a regeneration would immediately "find" the previous build.
+  // Version of dist/index.html from before the current round started
+  // streaming (null = no build yet). Vite rewrites dist on every build, so a
+  // changed Last-Modified means the backend's async rebuild has finished —
+  // even when the round left the output byte-identical. Without a baseline,
+  // a regeneration would immediately "find" the previous build.
   const baselineRef = React.useRef<string | null>(null)
 
+  // Resolves to the preview's version (Last-Modified, falling back to the
+  // body), or null when there is nothing to preview yet.
   const fetchPreview = React.useCallback(async () => {
     if (!previewUrl) return null
     const response = await fetch(previewUrl, { method: "GET", credentials: "include", cache: "no-store" })
-    return response.ok ? await response.text() : null
+    if (!response.ok) return null
+    return response.headers.get("Last-Modified") ?? (await response.text())
   }, [previewUrl])
 
   const checkAvailability = React.useCallback(async () => {
@@ -106,19 +208,19 @@ export function PreviewPanel({
       const baseline = baselineRef.current
       const poll = async () => {
         if (cancelled) return
-        let body: string | null = null
+        let version: string | null = null
         try {
-          body = await fetchPreview()
+          version = await fetchPreview()
         } catch {
           // transient network error — keep polling until the deadline
         }
         if (cancelled) return
-        if (body !== null && body !== baseline) {
+        if (version !== null && version !== baseline) {
           setState("available")
         } else if (Date.now() >= deadline) {
-          // Unchanged output (e.g. the round didn't touch any source) still
-          // counts as a usable build; nothing at all means the build failed.
-          setState(body !== null ? "available" : "build-failed")
+          // No rebuild landed (e.g. the build failed), but an earlier build
+          // is still usable; nothing at all means there is no build.
+          setState(version !== null ? "available" : "build-failed")
         } else {
           window.setTimeout(() => void poll(), BUILD_POLL_INTERVAL_MS)
         }
@@ -143,14 +245,15 @@ export function PreviewPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {codeFiles.length > 0 && <CodeFilesPanel files={codeFiles} streaming={streaming} />}
       {streaming ? (
-        <StatusOverlay icon={Loader2} spin message="正在生成网站，完成后自动显示预览" />
+        <PreviewLoading message="正在生成网站，代码生成后自动显示预览" />
       ) : !previewUrl ? (
-        <StatusOverlay icon={Loader2} spin message="加载应用信息中…" />
+        <PreviewLoading message="加载应用信息中…" />
       ) : state === "checking" ? (
-        <StatusOverlay icon={Loader2} spin message="正在检查预览是否可用…" />
+        <PreviewLoading message="正在检查预览是否可用…" />
       ) : state === "building" ? (
-        <StatusOverlay icon={Loader2} spin message="正在构建 Vue 项目，首次构建需安装依赖，可能需要几分钟…" />
+        <PreviewLoading message="正在构建 Vue 项目，首次构建需安装依赖，可能需要几分钟…" />
       ) : state === "build-failed" ? (
         <StatusOverlay
           icon={TriangleAlert}
@@ -176,12 +279,39 @@ export function PreviewPanel({
       ) : state === "unavailable" ? (
         <StatusOverlay icon={Sparkles} message="还没有生成内容，发送需求开始生成" />
       ) : (
-        <iframe
-          key={generationVersion}
-          src={`${previewUrl}?v=${generationVersion}`}
-          title="应用预览"
-          className="min-h-0 w-full flex-1 border-0"
-        />
+        <>
+          {(visualEditStatus === "loading" || visualEditStatus === "ready") && (
+            <p className="flex items-center gap-2 bg-muted px-4 py-2 text-sm text-muted-foreground">
+              {visualEditStatus === "loading" ? (
+                <Orb state="working" size={20} className="shrink-0 text-foreground" />
+              ) : (
+                <MousePointerClick className="shrink-0" size={16} />
+              )}
+              {visualEditStatus === "loading"
+                ? "正在准备可视化编辑…"
+                : "可视化编辑中，链接和表单暂不可用"}
+            </p>
+          )}
+          {/* bg-white stands in for the browser's default canvas: an iframe is
+              transparent, so sites without their own background would otherwise
+              render on top of the dark theme. */}
+          {visualEditFrame ? (
+            <LoadingPreviewFrame
+              key={`edit-${visualEditFrame.session}`}
+              frameRef={visualEditFrameRef}
+              srcDoc={visualEditFrame.srcDoc}
+              sandbox={VISUAL_EDIT_FRAME_SANDBOX}
+              onPointerLeave={onVisualEditPointerLeave}
+              title="应用预览（可视化编辑）"
+            />
+          ) : (
+            <LoadingPreviewFrame
+              key={`${previewUrl}#${generationVersion}`}
+              src={`${previewUrl}?v=${generationVersion}`}
+              title="应用预览"
+            />
+          )}
+        </>
       )}
     </div>
   )

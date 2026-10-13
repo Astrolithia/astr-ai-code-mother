@@ -5,11 +5,14 @@ import { API_BASE_URL } from "@/lib/api/mutator/custom-fetch"
  * backend streams `text/event-stream` (AppController#chatToGenCode), and
  * customFetch's `response.json()` can't consume that. Each default ("message")
  * event carries `data: {"d":"<chunk>"}`; the stream ends with a named `done`
- * event (see AppController.java).
+ * event (see AppController.java). HTML / multi-file rounds also emit a named
+ * `files-ready` event as soon as the code blocks are saved, which can be well
+ * before `done` while the AI is still writing its closing explanation.
  */
 export interface ChatStreamHandlers {
   onChunk: (text: string) => void
   onDone: () => void
+  onFilesReady?: () => void
   onError: (message: string) => void
 }
 
@@ -23,6 +26,11 @@ function parseSseEvent(raw: string): { event: string; data: string } {
   return { event, data: dataLines.join("\n") }
 }
 
+/** Shared with buildVisualEditMessage, which must budget for this exact URL. */
+export function buildChatStreamUrl(appId: string, message: string): string {
+  return `${API_BASE_URL}/app/chat/gen/code?${new URLSearchParams({ appId, message })}`
+}
+
 export function streamChatToGenCode(
   // appId is the app's snowflake id as a decimal string (see AppChatPage) —
   // never a JS `number`, since these ids exceed Number.MAX_SAFE_INTEGER.
@@ -33,10 +41,7 @@ export function streamChatToGenCode(
 ): void {
   void (async () => {
     try {
-      const url = `${API_BASE_URL}/app/chat/gen/code?${new URLSearchParams({
-        appId,
-        message,
-      })}`
+      const url = buildChatStreamUrl(appId, message)
       const response = await fetch(url, {
         method: "GET",
         credentials: "include",
@@ -79,6 +84,10 @@ export function streamChatToGenCode(
           if (event === "done") {
             handlers.onDone()
             return
+          }
+          if (event === "files-ready") {
+            handlers.onFilesReady?.()
+            continue
           }
           if (data) {
             try {
