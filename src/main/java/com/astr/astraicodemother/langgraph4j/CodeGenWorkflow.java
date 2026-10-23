@@ -3,17 +3,12 @@ package com.astr.astraicodemother.langgraph4j;
 import com.astr.astraicodemother.langgraph4j.node.CodeGeneratorNode;
 import com.astr.astraicodemother.langgraph4j.node.ContentImageCollectorNode;
 import com.astr.astraicodemother.langgraph4j.node.DiagramCollectorNode;
-import com.astr.astraicodemother.langgraph4j.node.FileSaverNode;
-import com.astr.astraicodemother.langgraph4j.node.HtmlGeneratorNode;
 import com.astr.astraicodemother.langgraph4j.node.IllustrationCollectorNode;
 import com.astr.astraicodemother.langgraph4j.node.ImageCollectorNode;
 import com.astr.astraicodemother.langgraph4j.node.LogoCollectorNode;
-import com.astr.astraicodemother.langgraph4j.node.MultiFileGeneratorNode;
-import com.astr.astraicodemother.langgraph4j.node.PackageBuilderNode;
 import com.astr.astraicodemother.langgraph4j.node.ProjectBuilderNode;
 import com.astr.astraicodemother.langgraph4j.node.PromptEnhancerNode;
 import com.astr.astraicodemother.langgraph4j.node.RouterNode;
-import com.astr.astraicodemother.langgraph4j.node.VueProjectGeneratorNode;
 import com.astr.astraicodemother.langgraph4j.state.CodeGenWorkflowState;
 import com.astr.astraicodemother.model.enums.CodeGenTypeEnum;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +28,7 @@ import static org.bsc.langgraph4j.StateGraph.START;
 import static org.bsc.langgraph4j.action.AsyncEdgeAction.edge_async;
 
 /**
- * 代码生成工作流：图片收集节点已接入真实工具，其余节点仍为 Mock
+ * 代码生成工作流：图片收集 → 提示词增强 → 智能路由 → 代码生成 →（Vue 工程）项目构建
  * <p>
  * 节点通过 SpringContextUtil 获取 Bean，需要在 Spring 容器启动后执行
  */
@@ -53,13 +48,8 @@ public class CodeGenWorkflow {
                 .addNode("logo_collector", LogoCollectorNode.create())
                 .addNode("prompt_enhancer", PromptEnhancerNode.create())
                 .addNode("router", RouterNode.create())
-                .addNode("html_generator", HtmlGeneratorNode.create())
-                .addNode("multi_file_generator", MultiFileGeneratorNode.create())
-                .addNode("vue_project_generator", VueProjectGeneratorNode.create())
                 .addNode("code_generator", CodeGeneratorNode.create())
                 .addNode("project_builder", ProjectBuilderNode.create())
-                .addNode("file_saver", FileSaverNode.create())
-                .addNode("package_builder", PackageBuilderNode.create())
 
                 // 输入原始 Prompt
                 .addEdge(START, "image_collector")
@@ -73,23 +63,16 @@ public class CodeGenWorkflow {
                 .addEdge("diagram_collector", "prompt_enhancer")
                 .addEdge("logo_collector", "prompt_enhancer")
                 .addEdge("prompt_enhancer", "router")
-                // 选择生成模式
-                .addConditionalEdges("router",
-                        edge_async(state -> state.generationType().getValue()),
+                // 按路由选择的模式生成代码
+                .addEdge("router", "code_generator")
+                // 只有 Vue 工程需要构建，其余模式生成即结束
+                .addConditionalEdges("code_generator",
+                        edge_async(state -> state.generationType() == CodeGenTypeEnum.VUE_PROJECT ? "build" : "skip_build"),
                         Map.of(
-                                CodeGenTypeEnum.HTML.getValue(), "html_generator",
-                                CodeGenTypeEnum.MULTI_FILE.getValue(), "multi_file_generator",
-                                CodeGenTypeEnum.VUE_PROJECT.getValue(), "vue_project_generator"
+                                "build", "project_builder",
+                                "skip_build", END
                         ))
-                .addEdge("html_generator", "code_generator")
-                .addEdge("multi_file_generator", "code_generator")
-                .addEdge("vue_project_generator", "code_generator")
-                .addEdge("code_generator", "project_builder")
-                // 项目构建：文件保存与打包构建并行，汇合后完成
-                .addEdge("project_builder", "file_saver")
-                .addEdge("project_builder", "package_builder")
-                .addEdge("file_saver", END)
-                .addEdge("package_builder", END)
+                .addEdge("project_builder", END)
                 // 编译工作流
                 .compile();
     }
@@ -98,11 +81,15 @@ public class CodeGenWorkflow {
      * 执行工作流
      *
      * @param originalPrompt 原始提示词
+     * @param appId          应用 ID，决定代码输出目录和对话记忆
      * @return 最终状态
      */
-    public CodeGenWorkflowState executeWorkflow(String originalPrompt) throws GraphStateException {
+    public CodeGenWorkflowState executeWorkflow(String originalPrompt, Long appId) throws GraphStateException {
         CompiledGraph<CodeGenWorkflowState> workflow = createWorkflow();
-        GraphInput input = GraphInput.args(Map.of(CodeGenWorkflowState.ORIGINAL_PROMPT, originalPrompt));
+        GraphInput input = GraphInput.args(Map.of(
+                CodeGenWorkflowState.ORIGINAL_PROMPT, originalPrompt,
+                CodeGenWorkflowState.APP_ID, appId
+        ));
         CodeGenWorkflowState finalState = null;
         int stepCounter = 1;
         log.info("开始执行代码生成工作流");
