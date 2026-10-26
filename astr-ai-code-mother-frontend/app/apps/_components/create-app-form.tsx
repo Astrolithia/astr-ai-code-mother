@@ -17,7 +17,7 @@ export function CreateAppForm() {
   const promptRef = React.useRef<HTMLTextAreaElement>(null)
   const submitting = React.useRef(false)
 
-  async function createApp(codeGenType: string) {
+  async function createApp(codeGenType: string | undefined) {
     if (submitting.current || addAppMutation.isPending) return
     setFormError(null)
 

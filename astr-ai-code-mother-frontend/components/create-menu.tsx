@@ -286,8 +286,8 @@ export function CreateMenu({
      borderRadius inline, so it cannot read a css variable */
   const panelR = clamp(corner, 0, CRT_MAX);
   const shutR = Math.min(19, panelR * (19 / CRT_CORNER));
-  // The supplied four-row menu is 166px tall. Astr has three modes, so only
-  // its fourth row's 34px height + 2px gap are removed; every other number stays.
+  // The supplied four-row menu is 166px tall. Each row away from four adds or
+  // removes its 34px height + 2px gap; every other number stays.
   const panelH = 166 + (items.length - 4) * 36;
 
   return (
