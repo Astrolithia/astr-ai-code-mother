@@ -56,7 +56,7 @@ public class JsonMessageStreamHandler {
                 .doOnComplete(() -> {
                     // 流式响应完成后，添加 AI 消息到对话历史
                     String aiResponse = chatHistoryStringBuilder.toString();
-                    chatHistoryService.addChatMessage(appId, aiResponse, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                    saveAiMessage(chatHistoryService, appId, aiResponse, loginUser);
                     if (buildOnComplete) {
                         String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/vue_project_" + appId;
                         vueProjectBuilder.buildProjectAsync(projectPath);
@@ -65,8 +65,19 @@ public class JsonMessageStreamHandler {
                 .doOnError(error -> {
                     // 如果AI回复失败，也要记录错误消息
                     String errorMessage = "AI回复失败: " + error.getMessage();
-                    chatHistoryService.addChatMessage(appId, errorMessage, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                    saveAiMessage(chatHistoryService, appId, errorMessage, loginUser);
                 });
+    }
+
+    /**
+     * 保存 AI 消息到对话历史；保存失败只记录日志，避免中断已生成完毕的流，导致前端收不到结束事件
+     */
+    private static void saveAiMessage(ChatHistoryService chatHistoryService, long appId, String message, User loginUser) {
+        try {
+            chatHistoryService.addChatMessage(appId, message, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+        } catch (Exception e) {
+            log.error("保存 AI 消息到对话历史失败，appId: {}，消息长度: {}", appId, message.length(), e);
+        }
     }
 
     /**
