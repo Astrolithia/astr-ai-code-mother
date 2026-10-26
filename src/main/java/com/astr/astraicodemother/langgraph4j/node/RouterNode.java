@@ -12,13 +12,18 @@ import java.util.Map;
 import static org.bsc.langgraph4j.action.AsyncNodeAction.node_async;
 
 /**
- * 智能路由节点：由 AI 根据用户需求选择代码生成模式
+ * 智能路由节点：未指定生成模式时，由 AI 根据用户需求选择
  */
 @Slf4j
 public class RouterNode {
 
     public static AsyncNodeAction<CodeGenWorkflowState> create() {
         return node_async(state -> {
+            // 应用创建时已确定生成模式的，沿用该模式，保证预览和部署目录稳定
+            if (state.generationType() != null) {
+                log.info("执行节点: 智能路由，沿用已指定的生成模式: {}", state.generationType().getText());
+                return Map.of();
+            }
             CodeGenTypeEnum generationType;
             try {
                 AiCodeGenTypeRoutingService routingService = SpringContextUtil.getBean(AiCodeGenTypeRoutingService.class);

@@ -3,6 +3,7 @@ package com.astr.astraicodemother.controller;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
+import com.astr.astraicodemother.ai.AiCodeGenTypeRoutingService;
 import com.astr.astraicodemother.annotation.AuthCheck;
 import com.astr.astraicodemother.common.BaseResponse;
 import com.astr.astraicodemother.common.DeleteRequest;
@@ -23,6 +24,7 @@ import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import com.astr.astraicodemother.core.StreamSignal;
 import org.springframework.http.codec.ServerSentEvent;
@@ -39,6 +41,7 @@ import java.util.Map;
  *
  * @author Astrolithia
  */
+@Slf4j
 @RestController
 @RequestMapping("/app")
 public class AppController {
@@ -48,6 +51,9 @@ public class AppController {
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private AiCodeGenTypeRoutingService aiCodeGenTypeRoutingService;
 
     @GetMapping(value = "/chat/gen/code", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> chatToGenCode(@RequestParam Long appId,
@@ -116,13 +122,28 @@ public class AppController {
         app.setUserId(loginUser.getId());
         // 应用名称暂时为 initPrompt 前12位
         app.setAppName(initPrompt.substring(0, Math.min(initPrompt.length(), 12)));
-        // 设置生成类型，未传或非法时默认多文件生成
+        // 设置生成类型，未传或非法时由 AI 根据需求选择
         CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(appAddRequest.getCodeGenType());
-        app.setCodeGenType(codeGenTypeEnum != null ? codeGenTypeEnum.getValue() : CodeGenTypeEnum.MULTI_FILE.getValue());
+        if (codeGenTypeEnum == null) {
+            codeGenTypeEnum = routeCodeGenType(initPrompt);
+        }
+        app.setCodeGenType(codeGenTypeEnum.getValue());
         // 插入数据库
         boolean result = appService.save(app);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(app.getId());
+    }
+
+    /**
+     * AI 选择生成类型，失败时降级为多文件生成
+     */
+    private CodeGenTypeEnum routeCodeGenType(String initPrompt) {
+        try {
+            return aiCodeGenTypeRoutingService.routeCodeGenType(initPrompt);
+        } catch (Exception e) {
+            log.error("AI 选择生成类型失败，降级为多文件生成: {}", e.getMessage(), e);
+            return CodeGenTypeEnum.MULTI_FILE;
+        }
     }
 
     /**

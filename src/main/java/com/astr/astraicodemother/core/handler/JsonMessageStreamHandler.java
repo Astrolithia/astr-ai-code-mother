@@ -37,11 +37,12 @@ public class JsonMessageStreamHandler {
      * @param chatHistoryService 聊天历史服务
      * @param appId              应用ID
      * @param loginUser          登录用户
+     * @param buildOnComplete    流结束后是否异步构建项目；工作流已在构建节点同步构建时传 false
      * @return 处理后的流
      */
     public Flux<String> handle(Flux<String> originFlux,
                                ChatHistoryService chatHistoryService,
-                               long appId, User loginUser) {
+                               long appId, User loginUser, boolean buildOnComplete) {
         // 收集数据用于生成后端记忆格式
         StringBuilder chatHistoryStringBuilder = new StringBuilder();
         // 用于跟踪已经见过的工具ID，判断是否是第一次调用
@@ -56,8 +57,10 @@ public class JsonMessageStreamHandler {
                     // 流式响应完成后，添加 AI 消息到对话历史
                     String aiResponse = chatHistoryStringBuilder.toString();
                     chatHistoryService.addChatMessage(appId, aiResponse, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
-                    String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/vue_project_" + appId;
-                    vueProjectBuilder.buildProjectAsync(projectPath);
+                    if (buildOnComplete) {
+                        String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/vue_project_" + appId;
+                        vueProjectBuilder.buildProjectAsync(projectPath);
+                    }
                 })
                 .doOnError(error -> {
                     // 如果AI回复失败，也要记录错误消息

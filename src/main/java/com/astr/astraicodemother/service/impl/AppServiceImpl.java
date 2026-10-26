@@ -13,6 +13,7 @@ import com.astr.astraicodemother.core.handler.SimpleTextStreamHandler;
 import com.astr.astraicodemother.exception.BusinessException;
 import com.astr.astraicodemother.exception.ErrorCode;
 import com.astr.astraicodemother.exception.ThrowUtils;
+import com.astr.astraicodemother.langgraph4j.CodeGenWorkflow;
 import com.astr.astraicodemother.mapper.AppMapper;
 import com.astr.astraicodemother.model.dto.app.AppAddRequest;
 import com.astr.astraicodemother.model.dto.app.AppQueryRequest;
@@ -176,13 +177,18 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "应用代码生成类型错误");
         }
-        // 5. 在调用 AI 前，先保存用户消息，保证对话历史的完整性
+        // 5. 首次生成走完整工作流（素材收集、质检、构建），后续修改直接基于对话记忆调用 AI
+        boolean firstGeneration = chatHistoryService.count(QueryWrapper.create().eq("appId", appId)) == 0;
+        // 6. 在调用 AI 前，先保存用户消息，保证对话历史的完整性
         chatHistoryService.addChatMessage(appId, message, ChatHistoryMessageTypeEnum.USER.getValue(), loginUser.getId());
-        // 6. 调用 AI 生成代码（流式）
-        Flux<String> contentFlux = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
-        // 7. 按生成类型处理流：Vue 工程模式的流是 JSON 消息，需要解析成文本；处理器负责保存对话历史
+        // 7. 调用 AI 生成代码（流式）
+        Flux<String> contentFlux = firstGeneration
+                ? new CodeGenWorkflow().executeWorkflowWithFlux(message, appId, codeGenTypeEnum)
+                : aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
+        // 8. 按生成类型处理流：Vue 工程模式的流是 JSON 消息，需要解析成文本；处理器负责保存对话历史
+        // 工作流已在构建节点完成构建，无需处理器再构建
         Flux<String> handledFlux = codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT
-                ? jsonMessageStreamHandler.handle(contentFlux, chatHistoryService, appId, loginUser)
+                ? jsonMessageStreamHandler.handle(contentFlux, chatHistoryService, appId, loginUser, !firstGeneration)
                 : simpleTextStreamHandler.handle(contentFlux, chatHistoryService, appId, loginUser);
         return handledFlux.doOnError(error -> log.error("AI 生成代码失败，appId: {}", appId, error));
     }
