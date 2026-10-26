@@ -18,10 +18,27 @@ class CodeGenWorkflowTest {
      */
     private static final Long TEST_APP_ID = 1L;
 
+    /**
+     * Vue 工程模式单独使用一个 ID，避免与其他模式的输出目录和对话记忆混在一起
+     */
+    private static final Long TEST_VUE_APP_ID = 2L;
+
     @Test
     void executeWorkflow() throws GraphStateException {
-        CodeGenWorkflowState state = new CodeGenWorkflow()
-                .executeWorkflow("帮我做一个咖啡店官网，需要 Logo 和门店系统架构介绍", TEST_APP_ID);
+        printAndCheck(new CodeGenWorkflow()
+                .executeWorkflow("帮我做一个咖啡店官网，需要 Logo 和门店系统架构介绍", TEST_APP_ID));
+    }
+
+    @Test
+    void executeVueProjectWorkflow() throws GraphStateException {
+        CodeGenWorkflowState state = new CodeGenWorkflow().executeWorkflow(
+                "做一个咖啡店的会员管理后台，包含会员列表、积分管理、订单记录和销售数据统计图表，需要 Logo 和系统架构介绍",
+                TEST_VUE_APP_ID);
+        printAndCheck(state);
+        Assertions.assertTrue(state.buildResultDir().endsWith("dist"));
+    }
+
+    private static void printAndCheck(CodeGenWorkflowState state) {
         Assertions.assertNotNull(state);
         for (ImageResource image : state.imageList()) {
             System.out.println(image.getCategory() + " | " + image.getDescription() + " | " + image.getUrl());
