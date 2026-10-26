@@ -2,6 +2,7 @@ package com.astr.astraicodemother.langgraph4j.state;
 
 import com.astr.astraicodemother.langgraph4j.model.ImageCollectionPlan;
 import com.astr.astraicodemother.langgraph4j.model.ImageResource;
+import com.astr.astraicodemother.langgraph4j.model.QualityResult;
 import com.astr.astraicodemother.model.enums.CodeGenTypeEnum;
 import org.bsc.langgraph4j.state.AgentState;
 import org.bsc.langgraph4j.state.Channel;
@@ -57,6 +58,16 @@ public class CodeGenWorkflowState extends AgentState {
     public static final String BUILD_RESULT_DIR = "buildResultDir";
 
     /**
+     * 最近一次代码质检结果
+     */
+    public static final String QUALITY_RESULT = "qualityResult";
+
+    /**
+     * 已执行的质检次数，用于限制重新生成的轮数
+     */
+    public static final String QUALITY_CHECK_COUNT = "qualityCheckCount";
+
+    /**
      * 图片列表使用追加通道，四路并行收集的结果会合并到一起；未声明的 key 默认为覆盖
      */
     public static final Map<String, Channel<?>> SCHEMA = Map.of(
@@ -100,5 +111,13 @@ public class CodeGenWorkflowState extends AgentState {
 
     public String buildResultDir() {
         return this.<String>value(BUILD_RESULT_DIR).orElse("");
+    }
+
+    public QualityResult qualityResult() {
+        return this.<QualityResult>value(QUALITY_RESULT).orElse(null);
+    }
+
+    public int qualityCheckCount() {
+        return this.<Integer>value(QUALITY_CHECK_COUNT).orElse(0);
     }
 }
