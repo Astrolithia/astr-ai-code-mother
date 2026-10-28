@@ -23,6 +23,11 @@ knife4j:
   enable: true
   setting:
     language: zh_cn
+# 默认 ChatModel 只服务工作流节点，失败由节点重试钩子统一重试（NodeRetryHook），模型层不再重试
+langchain4j:
+  open-ai:
+    chat-model:
+      max-retries: 0
 # 文生图配置（provider 可选：dashscope）
 image-generation:
   provider: dashscope

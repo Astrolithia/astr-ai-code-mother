@@ -44,24 +44,19 @@ public class CodeQualityCheckNode {
             int checkCount = state.qualityCheckCount() + 1;
             log.info("执行节点: 代码质量检查，第 {} 次", checkCount);
             QualityResult qualityResult;
-            try {
-                String codeContent = readAndConcatenateCodeFiles(state.generatedCodeDir());
-                if (StrUtil.isBlank(codeContent)) {
-                    log.warn("未找到可检查的代码文件: {}", state.generatedCodeDir());
-                    qualityResult = QualityResult.builder()
-                            .isValid(false)
-                            .errors(List.of("未找到可检查的代码文件"))
-                            .suggestions(List.of("请确保代码生成成功并已保存文件"))
-                            .build();
-                } else {
-                    CodeQualityCheckService qualityCheckService = SpringContextUtil.getBean(CodeQualityCheckService.class);
-                    qualityResult = qualityCheckService.checkCodeQuality(codeContent);
-                    log.info("代码质量检查完成，是否通过: {}，错误: {}", qualityResult.getIsValid(), qualityResult.getErrors());
-                }
-            } catch (Exception e) {
-                // 质检本身出错不阻断流程，按通过处理
-                log.error("代码质量检查异常: {}", e.getMessage(), e);
-                qualityResult = QualityResult.builder().isValid(true).build();
+            String codeContent = readAndConcatenateCodeFiles(state.generatedCodeDir());
+            if (StrUtil.isBlank(codeContent)) {
+                log.warn("未找到可检查的代码文件: {}", state.generatedCodeDir());
+                qualityResult = QualityResult.builder()
+                        .isValid(false)
+                        .errors(List.of("未找到可检查的代码文件"))
+                        .suggestions(List.of("请确保代码生成成功并已保存文件"))
+                        .build();
+            } else {
+                // 失败时由工作流的重试钩子重试，最终失败按通过处理
+                CodeQualityCheckService qualityCheckService = SpringContextUtil.getBean(CodeQualityCheckService.class);
+                qualityResult = qualityCheckService.checkCodeQuality(codeContent);
+                log.info("代码质量检查完成，是否通过: {}，错误: {}", qualityResult.getIsValid(), qualityResult.getErrors());
             }
             return Map.of(
                     CodeGenWorkflowState.QUALITY_RESULT, qualityResult,

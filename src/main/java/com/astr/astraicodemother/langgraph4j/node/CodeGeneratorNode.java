@@ -4,10 +4,14 @@ import cn.hutool.core.collection.CollUtil;
 import com.astr.astraicodemother.constant.AppConstant;
 import com.astr.astraicodemother.core.AiCodeGeneratorFacade;
 import com.astr.astraicodemother.langgraph4j.CodeGenWorkflow;
+import com.astr.astraicodemother.langgraph4j.hook.OutputStartedException;
 import com.astr.astraicodemother.langgraph4j.model.QualityResult;
 import com.astr.astraicodemother.langgraph4j.state.CodeGenWorkflowState;
 import com.astr.astraicodemother.model.enums.CodeGenTypeEnum;
 import com.astr.astraicodemother.util.SpringContextUtil;
+import dev.langchain4j.community.store.memory.chat.redis.RedisChatMemoryStore;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.UserMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.bsc.langgraph4j.action.AsyncNodeActionWithConfig;
 import reactor.core.publisher.Flux;
@@ -15,7 +19,10 @@ import reactor.core.publisher.FluxSink;
 
 import java.io.File;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.bsc.langgraph4j.action.AsyncNodeActionWithConfig.node_async;
 
@@ -39,11 +46,25 @@ public class CodeGeneratorNode {
             Flux<String> codeStream = codeGeneratorFacade.generateAndSaveCodeStream(buildUserMessage(state), generationType, appId);
             // 流式执行时把 AI 输出原样转发给调用方
             FluxSink<String> outputSink = CodeGenWorkflow.getOutputSink(config);
-            if (outputSink != null) {
-                codeStream = codeStream.doOnNext(outputSink::next);
+            AtomicBoolean outputStarted = new AtomicBoolean();
+            codeStream = codeStream.doOnNext(chunk -> {
+                outputStarted.set(true);
+                if (outputSink != null) {
+                    outputSink.next(chunk);
+                }
+            });
+            try {
+                // 门面在流结束时完成文件保存，这里同步等待
+                codeStream.blockLast(GENERATE_TIMEOUT);
+            } catch (RuntimeException e) {
+                // 已推给调用方的内容无法撤回，重试会导致重复输出
+                if (outputStarted.get()) {
+                    throw new OutputStartedException("代码生成中途失败，已输出部分内容，不再重试", e);
+                }
+                // 发出请求前用户消息已写入对话记忆，移除后再交给重试钩子，避免重试时重复写入
+                removeDanglingUserMessage(appId);
+                throw e;
             }
-            // 门面在流结束时完成文件保存，这里同步等待
-            codeStream.blockLast(GENERATE_TIMEOUT);
             String generatedCodeDir = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator
                     + generationType.getValue() + "_" + appId;
             log.info("代码生成完成，输出目录: {}", generatedCodeDir);
@@ -53,6 +74,19 @@ public class CodeGeneratorNode {
                     CodeGenWorkflowState.BUILD_RESULT_DIR, generatedCodeDir
             );
         });
+    }
+
+    /**
+     * 移除对话记忆末尾没有得到回复的用户消息，对话记忆以 appId 为 key
+     */
+    private static void removeDanglingUserMessage(Long appId) {
+        RedisChatMemoryStore chatMemoryStore = SpringContextUtil.getBean(RedisChatMemoryStore.class);
+        List<ChatMessage> messages = new ArrayList<>(chatMemoryStore.getMessages(appId));
+        if (!messages.isEmpty() && messages.getLast() instanceof UserMessage) {
+            messages.removeLast();
+            chatMemoryStore.updateMessages(appId, messages);
+            log.info("已移除未得到回复的用户消息，appId: {}", appId);
+        }
     }
 
     /**

@@ -2,6 +2,7 @@ package com.astr.astraicodemother.langgraph4j;
 
 import cn.hutool.json.JSONUtil;
 import com.astr.astraicodemother.ai.model.message.AiResponseMessage;
+import com.astr.astraicodemother.langgraph4j.hook.NodeRetryHook;
 import com.astr.astraicodemother.langgraph4j.model.QualityResult;
 import com.astr.astraicodemother.langgraph4j.node.CodeGeneratorNode;
 import com.astr.astraicodemother.langgraph4j.node.CodeQualityCheckNode;
@@ -94,6 +95,17 @@ public class CodeGenWorkflow {
                                 "skip_build", END
                         ))
                 .addEdge("project_builder", END)
+                // 调用 AI 的节点失败时按节点重试；路由节点的模型同时服务创建应用接口，保留模型层自带的重试
+                .addWrapCallNodeHook("image_collector", NodeRetryHook.withFallback(state -> {
+                    // 规划失败不阻断代码生成，后续节点按空计划跳过
+                    return Map.of();
+                }))
+                .addWrapCallNodeHook("code_generator", NodeRetryHook.retry())
+                .addWrapCallNodeHook("code_quality_check", NodeRetryHook.withFallback(state -> Map.of(
+                        // 质检本身出错不阻断流程，按通过处理
+                        CodeGenWorkflowState.QUALITY_RESULT, QualityResult.builder().isValid(true).build(),
+                        CodeGenWorkflowState.QUALITY_CHECK_COUNT, state.qualityCheckCount() + 1
+                )))
                 // 编译工作流
                 .compile();
     }
@@ -198,7 +210,7 @@ public class CodeGenWorkflow {
     /**
      * 输出进度：Vue 工程模式的流是 JSON 消息，需要包装成 AI 回复消息
      */
-    private static void emitProgress(FluxSink<String> outputSink, CodeGenTypeEnum generationType, String progress) {
+    public static void emitProgress(FluxSink<String> outputSink, CodeGenTypeEnum generationType, String progress) {
         if (outputSink == null) {
             return;
         }

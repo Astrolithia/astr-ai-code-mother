@@ -20,16 +20,11 @@ public class ImageCollectorNode {
     public static AsyncNodeAction<CodeGenWorkflowState> create() {
         return node_async(state -> {
             log.info("执行节点: 图片收集规划，原始提示词: {}", state.originalPrompt());
-            try {
-                ImageCollectionPlanService planService = SpringContextUtil.getBean(ImageCollectionPlanService.class);
-                ImageCollectionPlan plan = planService.planImageCollection(state.originalPrompt());
-                log.info("图片收集计划: {}", plan);
-                return Map.of(CodeGenWorkflowState.IMAGE_COLLECTION_PLAN, plan);
-            } catch (Exception e) {
-                // 规划失败不阻断代码生成，后续节点按空计划跳过
-                log.error("图片收集规划失败: {}", e.getMessage(), e);
-                return Map.of();
-            }
+            // 失败时由工作流的重试钩子重试，最终失败降级为空计划
+            ImageCollectionPlanService planService = SpringContextUtil.getBean(ImageCollectionPlanService.class);
+            ImageCollectionPlan plan = planService.planImageCollection(state.originalPrompt());
+            log.info("图片收集计划: {}", plan);
+            return Map.of(CodeGenWorkflowState.IMAGE_COLLECTION_PLAN, plan);
         });
     }
 }
