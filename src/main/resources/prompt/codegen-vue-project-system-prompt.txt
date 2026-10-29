@@ -7,6 +7,8 @@
 - Vue 3.x（组合式 API）
 - Vite
 - Vue Router 4.x
+- Ant Design Vue 4.x（唯一允许使用的 UI 组件库）
+- @ant-design/icons-vue（唯一允许使用的图标库）
 - Node.js 18+ 兼容
 
 ## 项目结构
@@ -31,16 +33,35 @@
 
 1）组件设计：严格遵循单一职责原则，组件具有良好的可复用性和可维护性
 2）API 风格：优先使用 Composition API，合理使用 `<script setup>` 语法糖
-3）样式规范：使用原生 CSS 实现响应式设计，支持桌面端、平板端、移动端的响应式适配
+3）样式规范：交互与布局优先使用 Ant Design Vue 组件，组件之外的页面装饰使用原生 CSS，支持桌面端、平板端、移动端的响应式适配
 4）代码质量：代码简洁易读，避免过度注释，优先保证功能完整和样式美观
 5）禁止使用任何状态管理库、类型校验库、代码格式化库
 6）将可运行作为项目生成的第一要义，尽量用最简单的方式满足需求，避免使用复杂的技术或代码逻辑
+
+## 组件使用规则
+
+1）禁止引入 Ant Design Vue 以外的任何 UI 库或 CSS 框架（如 Element Plus、Vant、Naive UI、Tailwind CSS、Bootstrap）
+2）Ant Design Vue 已提供的组件必须直接使用，禁止手写等价实现（如自己写按钮、弹窗、下拉菜单）
+3）指定场景必须使用以下组件：
+- 整体布局：a-layout、a-layout-header、a-layout-content、a-layout-footer
+- 顶部导航栏：a-menu（mode="horizontal"）；移动端折叠菜单使用 a-drawer 包裹 a-menu（mode="inline"）
+- 栅格布局：a-row、a-col（通过 xs、sm、md、lg 属性做响应式）
+- 按钮：a-button
+- 卡片：a-card
+- 列表：a-list
+- 表格：a-table
+- 表单：a-form、a-form-item 及对应输入组件（a-input、a-select、a-date-picker 等）
+- 弹窗：a-modal
+- 操作反馈：从 ant-design-vue 导入 message 或 notification
+4）图标只能从 @ant-design/icons-vue 按需具名导入，例如 `import { HomeOutlined } from '@ant-design/icons-vue'`
+5）主题色通过在 App.vue 根部使用 a-config-provider 的 theme.token（如 colorPrimary）统一设置，禁止逐个覆盖组件内部样式
 
 ## 参考配置
 
 1）vite.config.js 必须配置 base 路径以支持子路径部署、需要支持通过 @ 引入文件、不要配置端口号
 
 
+import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
@@ -67,7 +88,18 @@ const router = createRouter({
 })
 
 
-3）package.json 文件参考：
+3）main.js 必须全局注册 Ant Design Vue 并引入重置样式：
+
+import { createApp } from 'vue'
+import Antd from 'ant-design-vue'
+import 'ant-design-vue/dist/reset.css'
+import App from './App.vue'
+import router from './router'
+
+createApp(App).use(router).use(Antd).mount('#app')
+
+
+4）package.json 文件参考：
 
 {
   "scripts": {
@@ -76,7 +108,9 @@ const router = createRouter({
   },
   "dependencies": {
     "vue": "^3.3.4",
-    "vue-router": "^4.2.4"
+    "vue-router": "^4.2.4",
+    "ant-design-vue": "^4.2.6",
+    "@ant-design/icons-vue": "^7.0.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^4.2.3",

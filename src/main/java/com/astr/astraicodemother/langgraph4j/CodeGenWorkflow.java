@@ -10,6 +10,7 @@ import com.astr.astraicodemother.langgraph4j.node.ContentImageCollectorNode;
 import com.astr.astraicodemother.langgraph4j.node.DiagramCollectorNode;
 import com.astr.astraicodemother.langgraph4j.node.IllustrationCollectorNode;
 import com.astr.astraicodemother.langgraph4j.node.ImageCollectorNode;
+import com.astr.astraicodemother.langgraph4j.node.KnowledgeRetrieverNode;
 import com.astr.astraicodemother.langgraph4j.node.LogoCollectorNode;
 import com.astr.astraicodemother.langgraph4j.node.ProjectBuilderNode;
 import com.astr.astraicodemother.langgraph4j.node.PromptEnhancerNode;
@@ -67,6 +68,7 @@ public class CodeGenWorkflow {
                 .addNode("logo_collector", LogoCollectorNode.create())
                 .addNode("prompt_enhancer", PromptEnhancerNode.create())
                 .addNode("router", RouterNode.create())
+                .addNode("knowledge_retriever", KnowledgeRetrieverNode.create())
                 .addNode("code_generator", CodeGeneratorNode.create())
                 .addNode("code_quality_check", CodeQualityCheckNode.create())
                 .addNode("project_builder", ProjectBuilderNode.create())
@@ -83,8 +85,9 @@ public class CodeGenWorkflow {
                 .addEdge("diagram_collector", "prompt_enhancer")
                 .addEdge("logo_collector", "prompt_enhancer")
                 .addEdge("prompt_enhancer", "router")
-                // 按路由选择的模式生成代码
-                .addEdge("router", "code_generator")
+                // 按路由选择的模式检索知识库并生成代码
+                .addEdge("router", "knowledge_retriever")
+                .addEdge("knowledge_retriever", "code_generator")
                 .addEdge("code_generator", "code_quality_check")
                 // 质检未通过回到代码生成；通过后只有 Vue 工程需要构建，其余模式直接结束
                 .addConditionalEdges("code_quality_check",
@@ -98,6 +101,10 @@ public class CodeGenWorkflow {
                 // 调用 AI 的节点失败时按节点重试；路由节点的模型同时服务创建应用接口，保留模型层自带的重试
                 .addWrapCallNodeHook("image_collector", NodeRetryHook.withFallback(state -> {
                     // 规划失败不阻断代码生成，后续节点按空计划跳过
+                    return Map.of();
+                }))
+                .addWrapCallNodeHook("knowledge_retriever", NodeRetryHook.withFallback(state -> {
+                    log.warn("知识库检索失败，跳过知识注入");
                     return Map.of();
                 }))
                 .addWrapCallNodeHook("code_generator", NodeRetryHook.retry())
@@ -189,6 +196,9 @@ public class CodeGenWorkflow {
     private static String describeStep(String node, CodeGenWorkflowState state) {
         return switch (node) {
             case "prompt_enhancer" -> "已收集 %d 张图片素材，开始生成代码".formatted(state.imageList().size());
+            case "knowledge_retriever" -> state.generationType() == CodeGenTypeEnum.VUE_PROJECT
+                    ? "已匹配组件库最佳实践与设计规范"
+                    : null;
             case "code_quality_check" -> describeQualityCheck(state);
             case "project_builder" -> state.buildResultDir().endsWith("dist") ? "项目构建完成" : "项目构建失败";
             default -> null;

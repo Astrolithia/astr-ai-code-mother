@@ -1,19 +1,31 @@
 package com.astr.astraicodemother.core.template;
 
+import com.astr.astraicodemother.knowledge.CodeKnowledgeEnhancer;
 import com.astr.astraicodemother.model.enums.CodeGenTypeEnum;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.Optional;
+
 /**
- * 为用户需求补充代码模板上下文。
+ * 为用户需求补充代码模板或知识库上下文。
  */
 @Component
 public class CodeTemplatePromptEnhancer {
 
     private final CodeTemplateProvider codeTemplateProvider;
+    private final CodeKnowledgeEnhancer codeKnowledgeEnhancer;
 
+    public CodeTemplatePromptEnhancer(CodeTemplateProvider codeTemplateProvider) {
+        this(codeTemplateProvider, null);
+    }
+
+    @Autowired
     public CodeTemplatePromptEnhancer(
-            CodeTemplateProvider codeTemplateProvider) {
+            CodeTemplateProvider codeTemplateProvider,
+            CodeKnowledgeEnhancer codeKnowledgeEnhancer) {
         this.codeTemplateProvider = codeTemplateProvider;
+        this.codeKnowledgeEnhancer = codeKnowledgeEnhancer;
     }
 
     public String enhance(
@@ -22,6 +34,19 @@ public class CodeTemplatePromptEnhancer {
 
         // 不在这里替代业务入口的参数校验。
         if (userMessage == null || userMessage.isBlank()) {
+            return userMessage;
+        }
+
+        // 如果已经包含了知识库参考（由工作流中的 knowledge_retriever 节点注入），避免重复注入
+        if (userMessage.contains("代码知识库参考") || userMessage.contains("【代码模板参考】")) {
+            return userMessage;
+        }
+
+        if (codeGenType == CodeGenTypeEnum.VUE_PROJECT && codeKnowledgeEnhancer != null) {
+            Optional<String> knowledgeOpt = codeKnowledgeEnhancer.enhanceKnowledge(userMessage, codeGenType);
+            if (knowledgeOpt.isPresent()) {
+                return userMessage + "\n\n" + knowledgeOpt.get();
+            }
             return userMessage;
         }
 

@@ -13,6 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -139,5 +141,38 @@ class CodeTemplatePromptEnhancerTest {
                 () -> assertTrue(result.contains(template)),
                 () -> assertTrue(result.endsWith(message + "\n"))
         );
+    }
+
+    @Test
+    @DisplayName("Vue工程模式且命中知识库时注入知识库参考")
+    void enhancesVueProjectWhenKnowledgeFound() {
+        com.astr.astraicodemother.knowledge.CodeKnowledgeEnhancer mockKnowledgeEnhancer =
+                mock(com.astr.astraicodemother.knowledge.CodeKnowledgeEnhancer.class);
+        when(mockKnowledgeEnhancer.enhanceKnowledge(any(), eq(CodeGenTypeEnum.VUE_PROJECT)))
+                .thenReturn(java.util.Optional.of("## 代码知识库参考（Ant Design Vue 4.x 最佳实践）\nvue-navbar"));
+
+        CodeTemplatePromptEnhancer vueEnhancer = new CodeTemplatePromptEnhancer(provider, mockKnowledgeEnhancer);
+        String message = "创建一个科技感后台";
+        String result = vueEnhancer.enhance(message, CodeGenTypeEnum.VUE_PROJECT);
+
+        assertAll(
+                () -> assertTrue(result.contains("创建一个科技感后台")),
+                () -> assertTrue(result.contains("## 代码知识库参考")),
+                () -> assertTrue(result.contains("vue-navbar"))
+        );
+    }
+
+    @Test
+    @DisplayName("已包含知识库参考标记时跳过重复注入")
+    void skipsDuplicateKnowledgeInjection() {
+        com.astr.astraicodemother.knowledge.CodeKnowledgeEnhancer mockKnowledgeEnhancer =
+                mock(com.astr.astraicodemother.knowledge.CodeKnowledgeEnhancer.class);
+
+        CodeTemplatePromptEnhancer vueEnhancer = new CodeTemplatePromptEnhancer(provider, mockKnowledgeEnhancer);
+        String message = "创建一个科技感后台\n\n## 代码知识库参考\n已注入内容";
+        String result = vueEnhancer.enhance(message, CodeGenTypeEnum.VUE_PROJECT);
+
+        assertEquals(message, result);
+        verifyNoInteractions(mockKnowledgeEnhancer);
     }
 }
