@@ -25,8 +25,8 @@ description: 功能特性卡片网格，每张卡片包含图标、标题和描�
         <a-col v-for="item in features" :key="item.title" :xs="24" :sm="12" :lg="8">
           <a-card hoverable class="feature-card">
             <component :is="item.icon" class="feature-icon" />
-            <a-typography-title :level="4">{{ item.title }}</a-typography-title>
-            <a-typography-paragraph type="secondary">{{ item.desc }}</a-typography-paragraph>
+            <a-typography-title :level="4"><span v-text="item.title"></span></a-typography-title>
+            <a-typography-paragraph type="secondary"><span v-text="item.desc"></span></a-typography-paragraph>
           </a-card>
         </a-col>
       </a-row>

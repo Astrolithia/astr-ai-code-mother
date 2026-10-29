@@ -26,14 +26,14 @@ description: 价格套餐对比区块，三档套餐卡片并列展示价格、�
           <component :is="plan.recommended ? BadgeRibbon : 'div'" v-bind="plan.recommended ? { text: '推荐' } : {}" class="plan-wrap">
             <a-card class="plan-card" :title="plan.name">
               <div class="plan-price">
-                <span class="price">¥{{ plan.price }}</span>
+                <span class="price">¥<span v-text="plan.price"></span></span>
                 <span class="unit">/ 月</span>
               </div>
               <a-list :data-source="plan.benefits" :split="false" size="small">
                 <template #renderItem="{ item }">
                   <a-list-item>
                     <CheckOutlined class="check" />
-                    {{ item }}
+                    <span v-text="item"></span>
                   </a-list-item>
                 </template>
               </a-list>

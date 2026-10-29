@@ -26,9 +26,9 @@ description: 网站页脚，包含品牌简介、多列链接分组和联系方�
           <a-typography-paragraph type="secondary">一句话介绍品牌的使命与愿景。</a-typography-paragraph>
         </a-col>
         <a-col v-for="group in linkGroups" :key="group.title" :xs="24" :sm="12" :md="6">
-          <div class="footer-title">{{ group.title }}</div>
+          <div class="footer-title"><span v-text="group.title"></span></div>
           <a v-for="link in group.links" :key="link.label" :href="link.href" class="footer-link">
-            {{ link.label }}
+            <span v-text="link.label"></span>
           </a>
         </a-col>
       </a-row>
