@@ -86,6 +86,28 @@ class CodeKnowledgeEnhancerTest {
     }
 
     @Test
+    @DisplayName("命中避坑指南时拼接入提示词")
+    void enhancesWithErrorFixes() {
+        CodeKnowledgePlan plan = CodeKnowledgePlan.builder()
+                .styleQuery("简约浅色")
+                .sectionTasks(List.of(new SectionQueryTask("navbar", "顶部导航")))
+                .build();
+        when(planService.planKnowledge(any())).thenReturn(plan);
+        when(retriever.retrieveStyle(any(), any())).thenReturn(Optional.of(new CodeKnowledge("minimal-light", "theme", 0.8)));
+        when(retriever.retrieveComponent(any(), any(), any())).thenReturn(Optional.empty());
+
+        CodeKnowledge fix = new CodeKnowledge("fix-router", "#### 避坑指南：必须写 router-view", 0.82);
+        when(retriever.retrieveErrorFixes(eq("个人作品集"), eq(CodeGenTypeEnum.VUE_PROJECT), eq(2)))
+                .thenReturn(List.of(fix));
+
+        Optional<String> result = enhancer.enhanceKnowledge("个人作品集", CodeGenTypeEnum.VUE_PROJECT);
+        Assertions.assertTrue(result.isPresent());
+        String text = result.get();
+        Assertions.assertTrue(text.contains("历史高频踩坑与避坑指南"));
+        Assertions.assertTrue(text.contains("必须写 router-view"));
+    }
+
+    @Test
     @DisplayName("没有命中任何风格与组件时返回empty")
     void returnsEmptyWhenNoMatches() {
         CodeKnowledgePlan plan = CodeKnowledgePlan.builder()

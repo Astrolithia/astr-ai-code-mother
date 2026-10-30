@@ -58,10 +58,13 @@ public class CodeQualityCheckNode {
                 qualityResult = qualityCheckService.checkCodeQuality(codeContent);
                 log.info("代码质量检查完成，是否通过: {}，错误: {}", qualityResult.getIsValid(), qualityResult.getErrors());
             }
-            return Map.of(
-                    CodeGenWorkflowState.QUALITY_RESULT, qualityResult,
-                    CodeGenWorkflowState.QUALITY_CHECK_COUNT, checkCount
-            );
+            Map<String, Object> updates = new java.util.HashMap<>();
+            updates.put(CodeGenWorkflowState.QUALITY_RESULT, qualityResult);
+            updates.put(CodeGenWorkflowState.QUALITY_CHECK_COUNT, checkCount);
+            if (qualityResult != null && !Boolean.TRUE.equals(qualityResult.getIsValid()) && qualityResult.getErrors() != null) {
+                updates.put(CodeGenWorkflowState.LAST_FAILED_QUALITY_ERRORS, qualityResult.getErrors());
+            }
+            return updates;
         });
     }
 

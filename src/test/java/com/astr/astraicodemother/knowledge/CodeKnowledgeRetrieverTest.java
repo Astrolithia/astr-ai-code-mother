@@ -17,6 +17,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -110,6 +111,33 @@ class CodeKnowledgeRetrieverTest {
                 () -> assertTrue(prompt.contains("vue-navbar-top-menu")),
                 () -> assertTrue(prompt.contains("vue-pricing-table"))
         );
+    }
+
+    @Test
+    @DisplayName("避坑经验动态写入向量库并能被相似查询召回")
+    void ingestsAndRetrievesExperience() {
+        CodeFixExperience experience = CodeFixExperience.builder()
+                .id("fix-router-test-001")
+                .category("ROUTER_CONFIG")
+                .scenario("Vue 项目路由配置缺少 router-view 导致子页面空白")
+                .reason("App.vue 漏写了 router-view")
+                .avoidRule("- App.vue 必须包含 <router-view /> 标签\n- main.js 必须在 mount 之前 app.use(router)")
+                .codeGenType(VUE)
+                .uiLib("ant-design-vue")
+                .build();
+
+        // 动态回流写入向量库
+        retriever.ingestExperience(experience);
+
+        // 用相似的业务描述去检索
+        List<CodeKnowledge> fixes = retriever.retrieveErrorFixes("做一个多页面网站，配置多路由跳转导航", VUE, 1);
+        assertFalse(fixes.isEmpty(), "应该命中刚才回流的路由避坑指南");
+        CodeKnowledge hit = fixes.get(0);
+        System.out.println("=== 成功检索到回流的避坑指南 ===");
+        System.out.println("命中 ID: " + hit.id() + ", 相似度: " + hit.score());
+        System.out.println("内容:\n" + hit.content());
+        assertEquals("fix-router-test-001", hit.id());
+        assertTrue(hit.content().contains("router-view"));
     }
 
     private static String idOf(Optional<CodeKnowledge> knowledge) {

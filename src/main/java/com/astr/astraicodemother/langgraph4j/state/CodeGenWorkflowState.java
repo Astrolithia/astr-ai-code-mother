@@ -68,6 +68,11 @@ public class CodeGenWorkflowState extends AgentState {
     public static final String QUALITY_CHECK_COUNT = "qualityCheckCount";
 
     /**
+     * 上一次未通过质检的错误信息汇总，用于在修复成功后提炼避坑经验
+     */
+    public static final String LAST_FAILED_QUALITY_ERRORS = "lastFailedQualityErrors";
+
+    /**
      * 图片列表使用追加通道，四路并行收集的结果会合并到一起；未声明的 key 默认为覆盖
      */
     public static final Map<String, Channel<?>> SCHEMA = Map.of(
@@ -119,5 +124,9 @@ public class CodeGenWorkflowState extends AgentState {
 
     public int qualityCheckCount() {
         return this.<Integer>value(QUALITY_CHECK_COUNT).orElse(0);
+    }
+
+    public List<String> lastFailedQualityErrors() {
+        return this.<List<String>>value(LAST_FAILED_QUALITY_ERRORS).orElse(List.of());
     }
 }

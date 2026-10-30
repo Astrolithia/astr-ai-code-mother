@@ -19,6 +19,9 @@ public final class CodeKnowledgeMetadata {
 
     public static final String TYPE_STYLE = "style";
     public static final String TYPE_COMPONENT = "component";
+    public static final String TYPE_ERROR_FIX = "error_fix";
+
+    public static final String CATEGORY = "category";
 
     private CodeKnowledgeMetadata() {
     }

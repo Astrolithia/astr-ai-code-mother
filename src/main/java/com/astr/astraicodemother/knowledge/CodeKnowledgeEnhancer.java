@@ -79,12 +79,15 @@ public class CodeKnowledgeEnhancer {
             }
         }
 
-        if (styleKnowledge.isEmpty() && componentKnowledges.isEmpty()) {
+        // 3. 检索历史质检避坑经验 (最多取 top-2 条)
+        List<CodeKnowledge> errorFixKnowledges = retriever.retrieveErrorFixes(userPrompt, codeGenType, 2);
+
+        if (styleKnowledge.isEmpty() && componentKnowledges.isEmpty() && errorFixKnowledges.isEmpty()) {
             log.info("代码知识库未检索到符合阈值的参考内容");
             return Optional.empty();
         }
 
-        // 3. 组装为提示词片段
+        // 4. 组装为提示词片段
         StringBuilder sb = new StringBuilder();
         sb.append("## 代码知识库参考（Ant Design Vue 4.x 最佳实践）\n\n");
         sb.append("以下为知识库根据你的需求语义检索出的设计规范与组件参考代码，请在实现时参考：\n\n");
@@ -104,14 +107,24 @@ public class CodeKnowledgeEnhancer {
             }
         }
 
+        if (!errorFixKnowledges.isEmpty()) {
+            sb.append("### 3. 历史高频踩坑与避坑指南 (Common Pitfalls & Warnings)\n");
+            sb.append("系统从历史质检中提炼出以下高频错误与避坑指南，请在代码实现时务必严格规避：\n\n");
+            for (CodeKnowledge ef : errorFixKnowledges) {
+                sb.append(ef.content().trim()).append("\n\n");
+            }
+        }
+
         sb.append("### 知识库参考规则\n");
         sb.append("1. 系统提示词中的技术栈、组件库（Ant Design Vue 4.x）和硬约束规则具有最高优先级。\n");
-        sb.append("2. 知识库代码仅作为骨架和设计范例参考，必须根据用户的具体业务文案、颜色和布局进行定制，严禁生搬硬套。\n");
-        sb.append("3. 确保最终产出完整应用，包含所有必需的组件注册与配置。\n");
+        sb.append("2. 避坑指南中列出的禁止项和要求必须严格遵守，防止重蹈历史质检报错覆辙。\n");
+        sb.append("3. 知识库代码仅作为骨架和设计范例参考，必须根据用户的具体业务文案、颜色和布局进行定制，严禁生搬硬套。\n");
+        sb.append("4. 确保最终产出完整应用，包含所有必需的组件注册与配置。\n");
 
-        log.info("代码知识库检索增强完成，命中风格: {}，组件数: {}",
+        log.info("代码知识库检索增强完成，命中风格: {}，组件数: {}，避坑指南数: {}",
                 styleKnowledge.map(CodeKnowledge::id).orElse("无"),
-                componentKnowledges.size());
+                componentKnowledges.size(),
+                errorFixKnowledges.size());
         return Optional.of(sb.toString());
     }
 
