@@ -16,6 +16,7 @@ import com.astr.astraicodemother.langgraph4j.node.LogoCollectorNode;
 import com.astr.astraicodemother.langgraph4j.node.ProjectBuilderNode;
 import com.astr.astraicodemother.langgraph4j.node.PromptEnhancerNode;
 import com.astr.astraicodemother.langgraph4j.node.RouterNode;
+import com.astr.astraicodemother.langgraph4j.node.VisualQualityCheckNode;
 import com.astr.astraicodemother.langgraph4j.state.CodeGenWorkflowState;
 import com.astr.astraicodemother.model.enums.CodeGenTypeEnum;
 import lombok.extern.slf4j.Slf4j;
@@ -72,8 +73,9 @@ public class CodeGenWorkflow {
                 .addNode("knowledge_retriever", KnowledgeRetrieverNode.create())
                 .addNode("code_generator", CodeGeneratorNode.create())
                 .addNode("code_quality_check", CodeQualityCheckNode.create())
-                .addNode("experience_feedback", ExperienceFeedbackNode.create())
                 .addNode("project_builder", ProjectBuilderNode.create())
+                .addNode("visual_quality_check", VisualQualityCheckNode.create())
+                .addNode("experience_feedback", ExperienceFeedbackNode.create())
 
                 // 输入原始 Prompt
                 .addEdge(START, "image_collector")
@@ -91,21 +93,24 @@ public class CodeGenWorkflow {
                 .addEdge("router", "knowledge_retriever")
                 .addEdge("knowledge_retriever", "code_generator")
                 .addEdge("code_generator", "code_quality_check")
-                // 质检未通过回到代码生成；质检通过后先进入经验回流节点（沉淀修复案例）
+                // 静态代码质检：未通过回到代码生成；通过后 Vue 进入构建，非 Vue 模式进入经验沉淀
                 .addConditionalEdges("code_quality_check",
                         edge_async(CodeGenWorkflow::routeAfterQualityCheck),
                         Map.of(
                                 "fail", "code_generator",
+                                "build", "project_builder",
+                                "skip_build", "experience_feedback"
+                        ))
+                // 项目构建完成后，执行真实无头浏览器渲染与视觉质检 (DOM 几何碰撞检测)
+                .addEdge("project_builder", "visual_quality_check")
+                // 视觉质检：发现重叠遮挡等缺陷时回到代码生成重修；通过后进入经验沉淀
+                .addConditionalEdges("visual_quality_check",
+                        edge_async(CodeGenWorkflow::routeAfterVisualCheck),
+                        Map.of(
+                                "fail", "code_generator",
                                 "pass", "experience_feedback"
                         ))
-                // 经验回流完成后，按生成模式决定是否构建
-                .addConditionalEdges("experience_feedback",
-                        edge_async(state -> state.generationType() == CodeGenTypeEnum.VUE_PROJECT ? "build" : "skip_build"),
-                        Map.of(
-                                "build", "project_builder",
-                                "skip_build", END
-                        ))
-                .addEdge("project_builder", END)
+                .addEdge("experience_feedback", END)
                 // 调用 AI 的节点失败时按节点重试；路由节点的模型同时服务创建应用接口，保留模型层自带的重试
                 .addWrapCallNodeHook("image_collector", NodeRetryHook.withFallback(state -> {
                     // 规划失败不阻断代码生成，后续节点按空计划跳过
@@ -117,6 +122,10 @@ public class CodeGenWorkflow {
                 }))
                 .addWrapCallNodeHook("experience_feedback", NodeRetryHook.withFallback(state -> {
                     log.warn("经验回流节点执行失败，跳过经验沉淀");
+                    return Map.of();
+                }))
+                .addWrapCallNodeHook("visual_quality_check", NodeRetryHook.withFallback(state -> {
+                    log.warn("视觉质检节点执行失败，跳过视觉检查");
                     return Map.of();
                 }))
                 .addWrapCallNodeHook("code_generator", NodeRetryHook.retry())
@@ -215,9 +224,20 @@ public class CodeGenWorkflow {
                     ? "已提炼本次质检修复经验并回流知识库"
                     : null;
             case "code_quality_check" -> describeQualityCheck(state);
+            case "visual_quality_check" -> describeVisualCheck(state);
             case "project_builder" -> state.buildResultDir().endsWith("dist") ? "项目构建完成" : "项目构建失败";
             default -> null;
         };
+    }
+
+    private static String describeVisualCheck(CodeGenWorkflowState state) {
+        QualityResult qualityResult = state.qualityResult();
+        if (qualityResult == null || !qualityResult.needsFix()) {
+            return "视觉质检通过，页面排版与交互元素无物理遮挡";
+        }
+        StringBuilder progress = new StringBuilder("视觉质检发现以下排版缺陷，正在修复：");
+        qualityResult.getErrors().forEach(error -> progress.append("\n- ").append(error));
+        return progress.toString();
     }
 
     private static String describeQualityCheck(CodeGenWorkflowState state) {
@@ -251,15 +271,26 @@ public class CodeGenWorkflow {
     }
 
     /**
-     * 质检后的路由：未通过且未超过修复轮数时重新生成，通过后进入经验沉淀节点
+     * 静态质检后的路由：未通过且未超过修复轮数时重新生成，通过后 Vue 进入构建，其余模式跳过构建
      */
     private static String routeAfterQualityCheck(CodeGenWorkflowState state) {
         if (needsRegenerate(state)) {
-            log.warn("代码质检未通过，重新生成代码");
+            log.warn("代码静态质检未通过，重新生成代码");
             return "fail";
         }
         if (state.qualityResult() != null && state.qualityResult().needsFix()) {
-            log.warn("代码质检仍未通过，已达到最大修复轮数 {}，继续后续流程", MAX_FIX_ROUNDS);
+            log.warn("代码静态质检仍未通过，已达到最大修复轮数 {}，继续后续流程", MAX_FIX_ROUNDS);
+        }
+        return state.generationType() == CodeGenTypeEnum.VUE_PROJECT ? "build" : "skip_build";
+    }
+
+    /**
+     * 视觉质检后的路由：发现元素重叠等缺陷且未达到上限时打回重修，否则进入经验回流与交付
+     */
+    private static String routeAfterVisualCheck(CodeGenWorkflowState state) {
+        if (needsRegenerate(state)) {
+            log.warn("视觉质检未通过（发现物理遮挡或布局溢出），重新生成代码修复视觉缺陷");
+            return "fail";
         }
         return "pass";
     }
