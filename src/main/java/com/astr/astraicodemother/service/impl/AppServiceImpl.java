@@ -237,7 +237,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 8. 复制文件到部署目录
         String deployDirPath = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey;
         try {
-            FileUtil.copyContent(sourceDir, new File(deployDirPath), true);
+            copyDirectoryContent(sourceDir, new File(deployDirPath));
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "应用部署失败" + e.getMessage());
         }
@@ -250,5 +250,32 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
         // 9. 返回可访问的 URL 地址
         return String.format("%s/%s", AppConstant.CODE_DEPLOY_HOST, deployKey);
+    }
+    /**
+     * 递归复制目录内容（使用流式拷贝，避开 macOS 下 Files.copy/fcopyfile 复制扩展属性时触发的 Operation not permitted）
+     */
+    private static void copyDirectoryContent(File source, File target) throws java.io.IOException {
+        java.nio.file.Path sourcePath = source.toPath();
+        java.nio.file.Path targetPath = target.toPath();
+        java.nio.file.Files.walkFileTree(sourcePath, new java.nio.file.SimpleFileVisitor<>() {
+            @Override
+            public java.nio.file.FileVisitResult preVisitDirectory(java.nio.file.Path dir, java.nio.file.attribute.BasicFileAttributes attrs) throws java.io.IOException {
+                java.nio.file.Path targetDir = targetPath.resolve(sourcePath.relativize(dir));
+                if (!java.nio.file.Files.exists(targetDir)) {
+                    java.nio.file.Files.createDirectories(targetDir);
+                }
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public java.nio.file.FileVisitResult visitFile(java.nio.file.Path file, java.nio.file.attribute.BasicFileAttributes attrs) throws java.io.IOException {
+                java.nio.file.Path targetFile = targetPath.resolve(sourcePath.relativize(file));
+                try (var in = java.nio.file.Files.newInputStream(file);
+                     var out = java.nio.file.Files.newOutputStream(targetFile)) {
+                    in.transferTo(out);
+                }
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
     }
 }
